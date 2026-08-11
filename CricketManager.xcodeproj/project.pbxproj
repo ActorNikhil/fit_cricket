@@ -1,0 +1,305 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		16FB0284301FC1F6001FC555 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB0283301FC1F6001FC555 /* SettingsView.swift */; };
+		16FB028830249989001FC555 /* Feedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB028730249989001FC555 /* Feedback.swift */; };
+		16FB028C3026E669001FC555 /* MatchHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB028B3026E669001FC555 /* MatchHistoryView.swift */; };
+		AA000001 /* CricketManagerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000001 /* CricketManagerApp.swift */; };
+		AA000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000002 /* Models.swift */; };
+		AA000003 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000003 /* Theme.swift */; };
+		AA000004 /* AppViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000004 /* AppViewModel.swift */; };
+		AA000005 /* ScoringViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000005 /* ScoringViewModel.swift */; };
+		AA000006 /* TeamsViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000006 /* TeamsViewModel.swift */; };
+		AA000007 /* TeamsAndMatchViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000007 /* TeamsAndMatchViews.swift */; };
+		AA000008 /* ScoringView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000008 /* ScoringView.swift */; };
+		AA000009 /* ScoringSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000009 /* ScoringSheets.swift */; };
+		AA000010 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = AF000010 /* Assets.xcassets */; };
+		AA000013 /* MatchAwards.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000013 /* MatchAwards.swift */; };
+		AA000014 /* MatchResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000014 /* MatchResultView.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		16FB0283301FC1F6001FC555 /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		16FB028730249989001FC555 /* Feedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Feedback.swift; sourceTree = "<group>"; };
+		16FB028B3026E669001FC555 /* MatchHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchHistoryView.swift; sourceTree = "<group>"; };
+		AF000000 /* CricketManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CricketManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AF000001 /* CricketManagerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CricketManagerApp.swift; sourceTree = "<group>"; };
+		AF000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
+		AF000003 /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		AF000004 /* AppViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppViewModel.swift; sourceTree = "<group>"; };
+		AF000005 /* ScoringViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringViewModel.swift; sourceTree = "<group>"; };
+		AF000006 /* TeamsViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamsViewModel.swift; sourceTree = "<group>"; };
+		AF000007 /* TeamsAndMatchViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TeamsAndMatchViews.swift; sourceTree = "<group>"; };
+		AF000008 /* ScoringView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringView.swift; sourceTree = "<group>"; };
+		AF000009 /* ScoringSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScoringSheets.swift; sourceTree = "<group>"; };
+		AF000010 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		AF000012 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AF000013 /* MatchAwards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchAwards.swift; sourceTree = "<group>"; };
+		AF000014 /* MatchResultView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchResultView.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		BB000001 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		BB111111 = {
+			isa = PBXGroup;
+			children = (
+				CC000001 /* CricketManager */,
+				CC000002 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		CC000001 /* CricketManager */ = {
+			isa = PBXGroup;
+			children = (
+				AF000001 /* CricketManagerApp.swift */,
+				AF000002 /* Models.swift */,
+				AF000003 /* Theme.swift */,
+				AF000004 /* AppViewModel.swift */,
+				AF000005 /* ScoringViewModel.swift */,
+				AF000006 /* TeamsViewModel.swift */,
+				AF000007 /* TeamsAndMatchViews.swift */,
+				AF000008 /* ScoringView.swift */,
+				AF000009 /* ScoringSheets.swift */,
+				AF000010 /* Assets.xcassets */,
+				AF000012 /* Info.plist */,
+				AF000013 /* MatchAwards.swift */,
+				AF000014 /* MatchResultView.swift */,
+				16FB0283301FC1F6001FC555 /* SettingsView.swift */,
+				16FB028730249989001FC555 /* Feedback.swift */,
+				16FB028B3026E669001FC555 /* MatchHistoryView.swift */,
+			);
+			path = CricketManager;
+			sourceTree = "<group>";
+		};
+		CC000002 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AF000000 /* CricketManager.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		DD000001 /* CricketManager */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = EE000001 /* Build configuration list for PBXNativeTarget "CricketManager" */;
+			buildPhases = (
+				FF000001 /* Sources */,
+				BB000001 /* Frameworks */,
+				FF000002 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CricketManager;
+			productName = CricketManager;
+			productReference = AF000000 /* CricketManager.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		CC000000 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = 1;
+				LastSwiftUpdateCheck = 1500;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					DD000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+				};
+			};
+			buildConfigurationList = EE000002 /* Build configuration list for PBXProject "CricketManager" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				en,
+				Base,
+			);
+			mainGroup = BB111111;
+			productRefGroup = CC000002 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				DD000001 /* CricketManager */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		FF000002 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA000010 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		FF000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AA000001 /* CricketManagerApp.swift in Sources */,
+				AA000002 /* Models.swift in Sources */,
+				16FB028830249989001FC555 /* Feedback.swift in Sources */,
+				AA000003 /* Theme.swift in Sources */,
+				AA000004 /* AppViewModel.swift in Sources */,
+				16FB028C3026E669001FC555 /* MatchHistoryView.swift in Sources */,
+				AA000005 /* ScoringViewModel.swift in Sources */,
+				AA000006 /* TeamsViewModel.swift in Sources */,
+				AA000007 /* TeamsAndMatchViews.swift in Sources */,
+				AA000008 /* ScoringView.swift in Sources */,
+				AA000009 /* ScoringSheets.swift in Sources */,
+				16FB0284301FC1F6001FC555 /* SettingsView.swift in Sources */,
+				AA000013 /* MatchAwards.swift in Sources */,
+				AA000014 /* MatchResultView.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		EE000003 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = U645RR5YK9;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CricketManager/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cricket.dallascricket;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		EE000004 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = U645RR5YK9;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CricketManager/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.cricket.dallascricket;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		EE000005 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"DEBUG=1",
+					"$(inherited)",
+				);
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		EE000006 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		EE000001 /* Build configuration list for PBXNativeTarget "CricketManager" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EE000003 /* Debug */,
+				EE000004 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		EE000002 /* Build configuration list for PBXProject "CricketManager" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				EE000005 /* Debug */,
+				EE000006 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = CC000000 /* Project object */;
+}
