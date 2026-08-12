@@ -1,6 +1,7 @@
 import SwiftUI
 import SwiftData
 import PhotosUI
+import UIKit
 
 // MARK: - Teams View (Library)
 struct TeamsView: View {
@@ -17,7 +18,7 @@ struct TeamsView: View {
                     PageHeader(title: "Team Manager", subtitle: "Your saved squads").padding(.top, 8)
 
                     GoldButton(title: "New Team", icon: "➕") {
-                        let team = SavedTeam(name: "New Team")
+                        let team = SavedTeam(name: "")
                         context.insert(team)
                         // Persist immediately so the model has its permanent
                         // persistentModelID before it becomes the sheet's item.
@@ -952,13 +953,14 @@ struct BulkPlayerRegistrationView: View {
 
     private let placeholder = "Paste names here, one per line:\n\nNikhil\nRajesh\nArun Kumar"
 
-    // Names parsed from the pasted text: split on new lines and commas, trimmed,
-    // empties removed, and de-duplicated within the list (case-insensitive).
+    // Names parsed from the pasted text: split on new lines and commas, cleaned
+    // of common list markers (so lists copied from WhatsApp/Notes paste cleanly),
+    // trimmed, empties removed, and de-duplicated within the list (case-insensitive).
     private var parsedNames: [String] {
         let raw = text
             .components(separatedBy: .newlines)
             .flatMap { $0.components(separatedBy: ",") }
-            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .map { Self.cleanName($0) }
             .filter { !$0.isEmpty }
         var seen = Set<String>()
         var result: [String] = []
@@ -966,6 +968,21 @@ struct BulkPlayerRegistrationView: View {
             result.append(name)
         }
         return result
+    }
+
+    // Strips leading list markers left over from pasted lists, e.g.
+    // "1. Nikhil", "2) Rajesh", "- Arun", "• Vijay", "* Sam" -> just the name.
+    private static func cleanName(_ line: String) -> String {
+        var name = line.trimmingCharacters(in: .whitespaces)
+        // Remove a leading numbered marker like "1.", "12)", "3 -".
+        if let range = name.range(of: "^\\d+[\\.\\)\\-:]?\\s+", options: .regularExpression) {
+            name.removeSubrange(range)
+        }
+        // Remove a leading bullet / dash marker like "-", "•", "*", "‣".
+        if let range = name.range(of: "^[\\-\\u{2022}\\u{2023}\\*·]+\\s*", options: .regularExpression) {
+            name.removeSubrange(range)
+        }
+        return name.trimmingCharacters(in: .whitespaces)
     }
 
     private var existingNames: Set<String> {
@@ -984,7 +1001,16 @@ struct BulkPlayerRegistrationView: View {
             ScrollView {
                 VStack(spacing: 16) {
                     CricketCard {
-                        CardHeader(title: "Player Names")
+                        CardHeader(title: "Player Names", trailing: AnyView(
+                            Button(action: pasteFromClipboard) {
+                                HStack(spacing: 5) {
+                                    Image(systemName: "doc.on.clipboard")
+                                    Text("Paste")
+                                }
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(Theme.green)
+                            }
+                        ))
                         ZStack(alignment: .topLeading) {
                             if text.isEmpty {
                                 Text(placeholder)
@@ -1041,6 +1067,20 @@ struct BulkPlayerRegistrationView: View {
         }
     }
 
+    // Pull names straight from the system clipboard. This is a reliable paste
+    // path when the TextEditor's long-press paste menu doesn't appear. Existing
+    // text is preserved and the clipboard contents are appended on a new line.
+    private func pasteFromClipboard() {
+        guard let pasted = UIPasteboard.general.string,
+              !pasted.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        if text.isEmpty {
+            text = pasted
+        } else {
+            let separator = text.hasSuffix("\n") ? "" : "\n"
+            text += separator + pasted
+        }
+    }
+
     private func save() {
         for name in newNames {
             let parts = name.split(separator: " ").map(String.init)
@@ -1050,5 +1090,174 @@ struct BulkPlayerRegistrationView: View {
         }
         try? context.save()
         dismiss()
+    }
+}
+
+// MARK: - Calories burned estimate
+// Cricket-specific estimate of energy expended by each player, derived from their
+// all-time PlayerCareerStat totals (accumulated when a match ends). There is no
+// HealthKit / sensor data here, so these are transparent approximations based on
+// the physical activity each contribution implies:
+//   • Facing a ball    — footwork, stance, reaction
+//   • Running a run     — a ~20 m sprint down the pitch (boundaries aren't run)
+//   • Boundary shot     — an explosive, powerful stroke
+//   • Bowling a ball    — run-up plus delivery action
+//   • Playing a match   — general fielding / time on the field
+extension PlayerCareerStat {
+    /// Runs that required running between the wickets (boundaries are excluded).
+    var runningRuns: Int { max(0, runs - fours * 4 - sixes * 6) }
+
+    var battingCalories: Double {
+        Double(balls) * 0.6            // footwork per ball faced
+        + Double(runningRuns) * 3.5    // sprint per run taken
+        + Double(fours) * 2.0          // power in a four
+        + Double(sixes) * 4.0          // power in a six
+    }
+
+    var bowlingCalories: Double {
+        Double(ballsBowled) * 3.0      // run-up + delivery per ball
+    }
+
+    var fieldingCalories: Double {
+        Double(matches) * 45.0         // general fielding per match played
+    }
+
+    /// Total estimated calories burned across every match.
+    var caloriesBurned: Int {
+        Int((battingCalories + bowlingCalories + fieldingCalories).rounded())
+    }
+}
+
+// MARK: - Calories Tab
+// A fitness view that ranks every player by their estimated calories burned,
+// with a breakdown of how much came from batting vs bowling.
+struct CaloriesView: View {
+    @Query private var stats: [PlayerCareerStat]
+
+    private var ranked: [PlayerCareerStat] {
+        stats.filter { $0.caloriesBurned > 0 }.sorted { $0.caloriesBurned > $1.caloriesBurned }
+    }
+
+    private var totalCalories: Int {
+        ranked.reduce(0) { $0 + $1.caloriesBurned }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            PageHeader(title: "Calories", subtitle: "Estimated energy burned per player")
+                .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 8)
+
+            if ranked.isEmpty {
+                emptyState
+            } else {
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 16) {
+                        HStack(spacing: 12) {
+                            if let top = ranked.first {
+                                highlightCard(title: "Top Burner", name: top.name, role: top.role,
+                                              value: "\(top.caloriesBurned)", unit: "kcal", accent: Theme.gold)
+                            }
+                            totalCard
+                        }
+                        rankCard
+                        disclaimer
+                    }
+                    .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 30)
+                }
+            }
+        }
+    }
+
+    // MARK: Highlight cards
+    private func highlightCard(title: String, name: String, role: PlayerRole,
+                               value: String, unit: String, accent: Color) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.system(size: 9, weight: .bold)).tracking(1.5)
+                .textCase(.uppercase).foregroundColor(Theme.text3)
+            HStack(alignment: .bottom, spacing: 4) {
+                Text(value).font(.system(size: 34, weight: .black)).foregroundColor(accent)
+                Text(unit).font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.text3).padding(.bottom, 6)
+            }
+            HStack(spacing: 8) {
+                PlayerAvatar(name: name, role: role, size: 30)
+                Text(name).font(.system(size: 13, weight: .bold)).foregroundColor(Theme.text).lineLimit(1)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface1).cornerRadius(18)
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(accent.opacity(0.35), lineWidth: 1))
+    }
+
+    private var totalCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("Team Total").font(.system(size: 9, weight: .bold)).tracking(1.5)
+                .textCase(.uppercase).foregroundColor(Theme.text3)
+            HStack(alignment: .bottom, spacing: 4) {
+                Text("\(totalCalories)").font(.system(size: 34, weight: .black)).foregroundColor(Theme.green)
+                Text("kcal").font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.text3).padding(.bottom, 6)
+            }
+            HStack(spacing: 8) {
+                Image(systemName: "flame.fill").font(.system(size: 15, weight: .semibold)).foregroundColor(Theme.green)
+                Text("\(ranked.count) \(ranked.count == 1 ? "player" : "players")")
+                    .font(.system(size: 13, weight: .bold)).foregroundColor(Theme.text).lineLimit(1)
+            }
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Theme.surface1).cornerRadius(18)
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.green.opacity(0.35), lineWidth: 1))
+    }
+
+    // MARK: Ranked list card
+    private var rankCard: some View {
+        let shown = Array(ranked.prefix(20))
+        return CricketCard {
+            CardHeader(title: "Calories Burned")
+            ForEach(Array(shown.enumerated()), id: \.element.persistentModelID) { idx, p in
+                HStack(spacing: 12) {
+                    Text("\(idx + 1)").font(.system(size: 13, weight: .black))
+                        .foregroundColor(idx < 3 ? Theme.gold : Theme.text3).frame(width: 20)
+                    PlayerAvatar(name: p.name, role: p.role, size: 34)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(p.name).font(.system(size: 14, weight: .bold)).foregroundColor(Theme.text).lineLimit(1)
+                        Text("Bat \(Int(p.battingCalories.rounded())) · Bowl \(Int(p.bowlingCalories.rounded())) · \(p.matches) \(p.matches == 1 ? "match" : "matches")")
+                            .font(.system(size: 11)).foregroundColor(Theme.text3)
+                    }
+                    Spacer()
+                    HStack(alignment: .bottom, spacing: 3) {
+                        Text("\(p.caloriesBurned)").font(.system(size: 20, weight: .black)).foregroundColor(Theme.gold)
+                        Text("kcal").font(.system(size: 10, weight: .semibold)).foregroundColor(Theme.text3).padding(.bottom, 3)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.vertical, 11)
+                if idx < shown.count - 1 {
+                    Divider().background(Theme.border).padding(.leading, 60)
+                }
+            }
+        }
+    }
+
+    private var disclaimer: some View {
+        Text("Estimated from batting, bowling and fielding activity across all matches. For fun, not medical accuracy.")
+            .font(.system(size: 11)).foregroundColor(Theme.text3)
+            .multilineTextAlignment(.center).lineSpacing(2)
+            .frame(maxWidth: .infinity)
+            .padding(.horizontal, 8)
+    }
+
+    // MARK: Empty state
+    private var emptyState: some View {
+        VStack(spacing: 14) {
+            Spacer()
+            Text("🔥").font(.system(size: 54))
+            Text("No calories yet").font(.system(size: 18, weight: .bold)).foregroundColor(Theme.text)
+            Text("Finish a match to see how many calories\neach player burned batting and bowling.")
+                .font(.system(size: 13)).foregroundColor(Theme.text2)
+                .multilineTextAlignment(.center).lineSpacing(3)
+            Spacer(); Spacer()
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 30)
     }
 }
