@@ -120,7 +120,7 @@ struct PageHeader: View {
     let title: String; let subtitle: String
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 6) { Text("🏏").font(.system(size: 22)); Text("Third").font(.system(size: 22, weight: .bold)).foregroundColor(Theme.text); Text("Umpire").font(.system(size: 22, weight: .bold)).foregroundColor(Theme.gold) }
+            HStack(spacing: 6) { Text("🏏").font(.system(size: 22)); Text("Fit").font(.system(size: 22, weight: .bold)).foregroundColor(Theme.text); Text("Cricket").font(.system(size: 22, weight: .bold)).foregroundColor(Theme.gold) }
             Text(subtitle).font(.system(size: 13)).foregroundColor(Theme.text2)
         }.frame(maxWidth: .infinity, alignment: .leading)
     }

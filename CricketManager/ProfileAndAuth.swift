@@ -110,8 +110,8 @@ struct LoginView: View {
                 .shadow(color: .black.opacity(0.35), radius: 16, y: 8)
             VStack(spacing: 4) {
                 HStack(spacing: 6) {
-                    Text("Third").font(.system(size: 24, weight: .bold)).foregroundColor(.white)
-                    Text("Umpire").font(.system(size: 24, weight: .bold)).foregroundColor(Theme.gold)
+                    Text("Fit").font(.system(size: 24, weight: .bold)).foregroundColor(.white)
+                    Text("Cricket").font(.system(size: 24, weight: .bold)).foregroundColor(Theme.gold)
                 }
                 Text(codeSent ? "Enter the 6-digit code" : "Sign in with your phone")
                     .font(.system(size: 13)).foregroundColor(.white.opacity(0.6))
@@ -238,11 +238,7 @@ struct LoginView: View {
 // SwiftData model via @Bindable. Includes a Log Out control that returns to the
 // login gate (the profile itself is kept, so signing back in restores it).
 struct ProfileView: View {
-    @Environment(\.modelContext) private var context
     @Query private var profiles: [UserProfile]
-    @AppStorage(loggedInPhoneStorageKey) private var loggedInPhone = ""
-
-    @State private var photoItem: PhotosPickerItem?
 
     var body: some View {
         ScrollView {
@@ -250,7 +246,7 @@ struct ProfileView: View {
                 PageHeader(title: "Profile", subtitle: "Your account details").padding(.top, 8)
 
                 if let profile = profiles.first {
-                    editor(for: profile)
+                    ProfileEditorView(profile: profile)
                 } else {
                     // Shouldn't normally happen (login creates one), but keeps the
                     // view robust if the store was cleared out from under us.
@@ -264,83 +260,96 @@ struct ProfileView: View {
             .padding(.horizontal, 16)
         }
     }
+}
 
-    @ViewBuilder
-    private func editor(for profile: UserProfile) -> some View {
-        @Bindable var profile = profile
+// MARK: - Profile editor
+// Editing form for the owner's profile. Split into its own view so the SwiftData
+// model can be bound with @Bindable (edits write straight through to the store)
+// without capturing a local var inside SwiftUI's escaping view builders.
+private struct ProfileEditorView: View {
+    @Bindable var profile: UserProfile
+    @AppStorage(loggedInPhoneStorageKey) private var loggedInPhone = ""
+    @State private var photoItem: PhotosPickerItem?
+    @State private var pickedPhotoData: Data?
+
+    var body: some View {
         let previewImage = profile.photoData.flatMap { UIImage(data: $0) }
+        let avatarInitials = profile.initials.isEmpty ? "?" : profile.initials
 
-        // Avatar + photo picker
-        PhotosPicker(selection: $photoItem, matching: .images) {
-            VStack(spacing: 8) {
-                ZStack {
-                    if let previewImage {
-                        Image(uiImage: previewImage).resizable().scaledToFill()
-                            .frame(width: 104, height: 104).clipShape(Circle())
-                    } else {
-                        Circle().fill(Theme.gold.opacity(0.15)).frame(width: 104, height: 104)
-                            .overlay(
-                                Text(profile.initials.isEmpty ? "?" : profile.initials)
-                                    .font(.system(size: 34, weight: .bold)).foregroundColor(Theme.gold)
-                            )
+        VStack(spacing: 16) {
+            // Avatar + photo picker
+            PhotosPicker(selection: $photoItem, matching: .images) {
+                VStack(spacing: 8) {
+                    ZStack {
+                        if let previewImage {
+                            Image(uiImage: previewImage).resizable().scaledToFill()
+                                .frame(width: 104, height: 104).clipShape(Circle())
+                        } else {
+                            Circle().fill(Theme.gold.opacity(0.15)).frame(width: 104, height: 104)
+                                .overlay(
+                                    Text(avatarInitials)
+                                        .font(.system(size: 34, weight: .bold)).foregroundColor(Theme.gold)
+                                )
+                        }
+                        Circle().stroke(Theme.gold.opacity(0.5), lineWidth: 2).frame(width: 104, height: 104)
                     }
-                    Circle().stroke(Theme.gold.opacity(0.5), lineWidth: 2).frame(width: 104, height: 104)
+                    Text(previewImage == nil ? "Add Photo" : "Change Photo")
+                        .font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.gold)
                 }
-                Text(previewImage == nil ? "Add Photo" : "Change Photo")
-                    .font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.gold)
+                .frame(maxWidth: .infinity).padding(.vertical, 8)
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 8)
-        }
 
-        CricketCard {
-            CardHeader(title: "Name")
-            VStack(spacing: 10) {
-                profileField("First name", text: $profile.firstName, icon: "person.fill")
-                profileField("Last name", text: $profile.lastName, icon: "person.fill")
-            }
-            .padding(14)
-        }
-
-        CricketCard {
-            CardHeader(title: "Contact")
-            VStack(spacing: 10) {
-                // Phone is the login identity — shown read-only here.
-                HStack(spacing: 10) {
-                    Image(systemName: "phone.fill").font(.system(size: 13)).foregroundColor(Theme.text3).frame(width: 18)
-                    Text(profile.phone.isEmpty ? "—" : profile.phone)
-                        .font(.system(size: 15, weight: .semibold)).foregroundColor(Theme.text2)
-                    Spacer()
-                    BadgeView(text: "Login")
+            CricketCard {
+                CardHeader(title: "Name")
+                VStack(spacing: 10) {
+                    profileField("First name", text: $profile.firstName, icon: "person.fill")
+                    profileField("Last name", text: $profile.lastName, icon: "person.fill")
                 }
-                .padding(.horizontal, 12).padding(.vertical, 12)
-                .background(Theme.surface2).cornerRadius(10)
-
-                profileField("Email address", text: $profile.email, icon: "envelope.fill", keyboard: .emailAddress)
+                .padding(14)
             }
-            .padding(14)
-        }
 
-        Button(role: .destructive) { logOut() } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "rectangle.portrait.and.arrow.right")
-                Text("Log Out").font(.system(size: 15, weight: .bold)).tracking(1)
+            CricketCard {
+                CardHeader(title: "Contact")
+                VStack(spacing: 10) {
+                    // Phone is the login identity — shown read-only here.
+                    HStack(spacing: 10) {
+                        Image(systemName: "phone.fill").font(.system(size: 13)).foregroundColor(Theme.text3).frame(width: 18)
+                        Text(profile.phone.isEmpty ? "—" : profile.phone)
+                            .font(.system(size: 15, weight: .semibold)).foregroundColor(Theme.text2)
+                        Spacer()
+                        BadgeView(text: "Login")
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 12)
+                    .background(Theme.surface2).cornerRadius(10)
+
+                    profileField("Email address", text: $profile.email, icon: "envelope.fill", keyboard: .emailAddress)
+                }
+                .padding(14)
             }
-            .foregroundColor(Theme.red).frame(maxWidth: .infinity).padding(.vertical, 15)
-            .background(Theme.red.opacity(0.12)).cornerRadius(14)
-            .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.red.opacity(0.3), lineWidth: 1))
+
+            Button(role: .destructive) { loggedInPhone = "" } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "rectangle.portrait.and.arrow.right")
+                    Text("Log Out").font(.system(size: 15, weight: .bold)).tracking(1)
+                }
+                .foregroundColor(Theme.red).frame(maxWidth: .infinity).padding(.vertical, 15)
+                .background(Theme.red.opacity(0.12)).cornerRadius(14)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.red.opacity(0.3), lineWidth: 1))
+            }
+            .padding(.top, 4)
         }
-        .padding(.top, 4)
+        // Decode the picked image off the model, then mirror it in synchronously —
+        // this keeps the SwiftData model off the concurrent task entirely.
         .onChange(of: photoItem) { _, newItem in
             Task {
                 if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                    profile.photoData = data
+                    pickedPhotoData = data
                 }
             }
         }
-    }
-
-    private func logOut() {
-        loggedInPhone = ""
+        .onChange(of: pickedPhotoData) { _, newData in
+            if let newData { profile.photoData = newData }
+        }
     }
 
     // Styled text field matching the app's editor fields.

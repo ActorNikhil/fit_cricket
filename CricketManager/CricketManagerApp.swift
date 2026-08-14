@@ -7,12 +7,12 @@ struct CricketManagerApp: App {
     @AppStorage(themeModeStorageKey) private var themeMode: ThemeMode = .dark
     var body: some Scene {
         WindowGroup {
-            RootView()
+            RootAuthGate()
                 .environmentObject(appVM)
                 .preferredColorScheme(themeMode.colorScheme)
                 .buttonStyle(FeedbackButtonStyle())
         }
-        .modelContainer(for: [SavedTeam.self, PlayerCareerStat.self, RegisteredPlayer.self, CompletedMatch.self])
+        .modelContainer(for: [SavedTeam.self, PlayerCareerStat.self, RegisteredPlayer.self, CompletedMatch.self, UserProfile.self])
     }
 }
 
@@ -85,8 +85,8 @@ struct SplashView: View {
 
                 VStack(spacing: 4) {
                     HStack(spacing: 6) {
-                        Text("Third").font(.system(size: 26, weight: .bold)).foregroundColor(.white)
-                        Text("Umpire").font(.system(size: 26, weight: .bold)).foregroundColor(Theme.gold)
+                        Text("Fit").font(.system(size: 26, weight: .bold)).foregroundColor(.white)
+                        Text("Cricket").font(.system(size: 26, weight: .bold)).foregroundColor(Theme.gold)
                     }
                     Text("MATCH • SCORE • WIN")
                         .font(.system(size: 11, weight: .semibold)).tracking(4)
@@ -210,6 +210,7 @@ struct MoreView: View {
     @ViewBuilder
     private func destinationView(for item: MoreDestination) -> some View {
         switch item {
+        case .profile:  ProfileView()
         case .history:  MatchHistoryView()
         case .players:  PlayersView()
         case .settings: SettingsView()
@@ -218,10 +219,11 @@ struct MoreView: View {
 }
 
 enum MoreDestination: CaseIterable, Hashable {
-    case history, players, settings
+    case profile, history, players, settings
 
     var title: String {
         switch self {
+        case .profile:  return "Profile"
         case .history:  return "History"
         case .players:  return "Players"
         case .settings: return "Settings"
@@ -230,8 +232,9 @@ enum MoreDestination: CaseIterable, Hashable {
 
     var icon: String {
         switch self {
+        case .profile:  return "person.crop.circle.fill"
         case .history:  return "flag.checkered"
-        case .players:  return "person.crop.circle.fill"
+        case .players:  return "person.2.fill"
         case .settings: return "gearshape.fill"
         }
     }
