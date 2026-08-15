@@ -38,7 +38,6 @@ struct CricketTeam: Identifiable, Codable {
 }
 
 // MARK: - Persistent team library (SwiftData)
-// These @Model entities are the durable store for the user's saved squads.
 // Match play uses value-type snapshots (CricketTeam/Player) so editing a saved
 // team later never mutates a match that is already in progress or finished.
 @Model
