@@ -2,6 +2,7 @@ import SwiftUI
 import SwiftData
 import PhotosUI
 import UIKit
+import Charts
 
 // MARK: - Teams View (Library)
 struct TeamsView: View {
@@ -792,6 +793,7 @@ struct RegisteredAvatar: View {
 struct PlayerRegistrationView: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var context
+    @Query private var players: [RegisteredPlayer]
 
     @State private var firstName = ""
     @State private var lastName = ""
@@ -799,13 +801,18 @@ struct PlayerRegistrationView: View {
     @State private var email = ""
     @State private var photoItem: PhotosPickerItem?
     @State private var photoData: Data?
+    @State private var errorMessage: String?
     @FocusState private var focusedField: RegistrationField?
 
     private enum RegistrationField: Hashable { case firstName, lastName, phone, email }
 
+    // Digits of the entered phone number, used for validation and duplicate checks.
+    private var normalizedPhone: String { phone.filter(\.isNumber) }
+
     private var canSave: Bool {
         !firstName.trimmingCharacters(in: .whitespaces).isEmpty &&
-        !lastName.trimmingCharacters(in: .whitespaces).isEmpty
+        !lastName.trimmingCharacters(in: .whitespaces).isEmpty &&
+        normalizedPhone.count >= 7
     }
 
     var body: some View {
@@ -844,10 +851,10 @@ struct PlayerRegistrationView: View {
                     }
 
                     CricketCard {
-                        CardHeader(title: "Contact (optional)")
+                        CardHeader(title: "Contact")
                         VStack(spacing: 10) {
-                            styledField("Phone number", text: $phone, icon: "phone.fill", field: .phone, keyboard: .phonePad)
-                            styledField("Email address", text: $email, icon: "envelope.fill", field: .email, keyboard: .emailAddress)
+                            styledField("Phone number (required)", text: $phone, icon: "phone.fill", field: .phone, keyboard: .phonePad)
+                            styledField("Email address (optional)", text: $email, icon: "envelope.fill", field: .email, keyboard: .emailAddress)
                         }
                         .padding(14)
                     }
@@ -883,10 +890,28 @@ struct PlayerRegistrationView: View {
                     }
                 }
             }
+            .alert("Cannot Register", isPresented: Binding(
+                get: { errorMessage != nil },
+                set: { if !$0 { errorMessage = nil } }
+            )) {
+                Button("OK", role: .cancel) { errorMessage = nil }
+            } message: {
+                Text(errorMessage ?? "")
+            }
         }
     }
 
     private func save() {
+        // Phone number is mandatory and must be unique across registered players.
+        guard normalizedPhone.count >= 7 else {
+            errorMessage = "Please enter a valid phone number to register."
+            return
+        }
+        if players.contains(where: { $0.normalizedPhone == normalizedPhone }) {
+            errorMessage = "A player with this phone number is already registered."
+            return
+        }
+
         let player = RegisteredPlayer(
             firstName: firstName.trimmingCharacters(in: .whitespaces),
             lastName: lastName.trimmingCharacters(in: .whitespaces),
@@ -1129,37 +1154,75 @@ extension PlayerCareerStat {
 }
 
 // MARK: - Calories Tab
-// A fitness view that ranks every player by their estimated calories burned,
-// with a breakdown of how much came from batting vs bowling.
+// A personal fitness view for the logged-in user (matched by name to their
+// profile). Shows today's burn first, a batting/bowling/fielding pie split, and
+// a rolling 30-day daily history. Data comes from dated CalorieEntry records.
 struct CaloriesView: View {
-    @Query private var stats: [PlayerCareerStat]
+    @Query(sort: \CalorieEntry.date, order: .reverse) private var entries: [CalorieEntry]
+    @Query private var profiles: [UserProfile]
 
-    private var ranked: [PlayerCareerStat] {
-        stats.filter { $0.caloriesBurned > 0 }.sorted { $0.caloriesBurned > $1.caloriesBurned }
+    private let calendar = Calendar.current
+
+    private var profile: UserProfile? { profiles.first }
+
+    // Start of the 30-day window (today plus the previous 29 days).
+    private var windowStart: Date {
+        calendar.date(byAdding: .day, value: -29, to: calendar.startOfDay(for: .now)) ?? .now
     }
 
-    private var totalCalories: Int {
-        ranked.reduce(0) { $0 + $1.caloriesBurned }
+    /// This user's calorie entries within the last 30 days.
+    private var myEntries: [CalorieEntry] {
+        let target = (profile?.fullName ?? "").trimmingCharacters(in: .whitespaces).lowercased()
+        guard !target.isEmpty else { return [] }
+        return entries.filter {
+            $0.playerName.trimmingCharacters(in: .whitespaces).lowercased() == target && $0.date >= windowStart
+        }
+    }
+
+    private var todayEntries: [CalorieEntry] { myEntries.filter { calendar.isDateInToday($0.date) } }
+    private var todayTotal: Int { todayEntries.reduce(0) { $0 + $1.total } }
+
+    // The pie shows today's split when the user played today, otherwise the
+    // last-30-days split so the chart is still meaningful on rest days.
+    private var pieUsesToday: Bool { !todayEntries.isEmpty }
+    private var pieSource: [CalorieEntry] { pieUsesToday ? todayEntries : myEntries }
+    private var pieBatting: Double { pieSource.reduce(0) { $0 + $1.battingCalories } }
+    private var pieBowling: Double { pieSource.reduce(0) { $0 + $1.bowlingCalories } }
+    private var pieFielding: Double { pieSource.reduce(0) { $0 + $1.fieldingCalories } }
+
+    private var segments: [CalorieSegment] {
+        [CalorieSegment(label: "Batting", value: pieBatting, color: Theme.gold),
+         CalorieSegment(label: "Bowling", value: pieBowling, color: Theme.green),
+         CalorieSegment(label: "Fielding", value: pieFielding, color: Theme.cyan)]
+            .filter { $0.value > 0 }
+    }
+
+    // 30-day history aggregated per calendar day, newest first.
+    private var dailyHistory: [DayTotal] {
+        let groups = Dictionary(grouping: myEntries) { calendar.startOfDay(for: $0.date) }
+        return groups.map { day, items in
+            DayTotal(date: day,
+                     batting: Int(items.reduce(0) { $0 + $1.battingCalories }.rounded()),
+                     bowling: Int(items.reduce(0) { $0 + $1.bowlingCalories }.rounded()),
+                     fielding: Int(items.reduce(0) { $0 + $1.fieldingCalories }.rounded()),
+                     total: items.reduce(0) { $0 + $1.total })
+        }
+        .sorted { $0.date > $1.date }
     }
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: "Calories", subtitle: "Estimated energy burned per player")
+            PageHeader(title: "Calories", subtitle: "Your energy burned · last 30 days")
                 .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 8)
 
-            if ranked.isEmpty {
+            if myEntries.isEmpty {
                 emptyState
             } else {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
-                        HStack(spacing: 12) {
-                            if let top = ranked.first {
-                                highlightCard(title: "Top Burner", name: top.name, role: top.role,
-                                              value: "\(top.caloriesBurned)", unit: "kcal", accent: Theme.gold)
-                            }
-                            totalCard
-                        }
-                        rankCard
+                        todayCard
+                        pieCard
+                        historyCard
                         disclaimer
                     }
                     .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, 30)
@@ -1168,78 +1231,108 @@ struct CaloriesView: View {
         }
     }
 
-    // MARK: Highlight cards
-    private func highlightCard(title: String, name: String, role: PlayerRole,
-                               value: String, unit: String, accent: Color) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 9, weight: .bold)).tracking(1.5)
-                .textCase(.uppercase).foregroundColor(Theme.text3)
-            HStack(alignment: .bottom, spacing: 4) {
-                Text(value).font(.system(size: 34, weight: .black)).foregroundColor(accent)
-                Text(unit).font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.text3).padding(.bottom, 6)
-            }
+    // MARK: Today card
+    private var todayCard: some View {
+        VStack(spacing: 12) {
             HStack(spacing: 8) {
-                PlayerAvatar(name: name, role: role, size: 30)
-                Text(name).font(.system(size: 13, weight: .bold)).foregroundColor(Theme.text).lineLimit(1)
+                Image(systemName: "flame.fill").font(.system(size: 14)).foregroundColor(Theme.gold)
+                Text("TODAY").font(.system(size: 11, weight: .bold)).tracking(2).foregroundColor(Theme.text3)
+                Spacer()
+                Text(Date.now.formatted(date: .abbreviated, time: .omitted))
+                    .font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.text3)
             }
+            HStack(alignment: .bottom, spacing: 6) {
+                Text("\(todayTotal)").font(.system(size: 52, weight: .black)).foregroundColor(Theme.gold)
+                Text("kcal").font(.system(size: 15, weight: .semibold)).foregroundColor(Theme.text3).padding(.bottom, 10)
+            }
+            .frame(maxWidth: .infinity)
+            Text(todayTotal > 0
+                 ? "Burned in \(todayEntries.count) \(todayEntries.count == 1 ? "match" : "matches") today"
+                 : "No matches played today")
+                .font(.system(size: 12)).foregroundColor(Theme.text3)
         }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .frame(maxWidth: .infinity)
         .background(Theme.surface1).cornerRadius(18)
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(accent.opacity(0.35), lineWidth: 1))
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.gold.opacity(0.35), lineWidth: 1))
     }
 
-    private var totalCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Team Total").font(.system(size: 9, weight: .bold)).tracking(1.5)
-                .textCase(.uppercase).foregroundColor(Theme.text3)
-            HStack(alignment: .bottom, spacing: 4) {
-                Text("\(totalCalories)").font(.system(size: 34, weight: .black)).foregroundColor(Theme.green)
-                Text("kcal").font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.text3).padding(.bottom, 6)
-            }
-            HStack(spacing: 8) {
-                Image(systemName: "flame.fill").font(.system(size: 15, weight: .semibold)).foregroundColor(Theme.green)
-                Text("\(ranked.count) \(ranked.count == 1 ? "player" : "players")")
-                    .font(.system(size: 13, weight: .bold)).foregroundColor(Theme.text).lineLimit(1)
-            }
-        }
-        .padding(14)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Theme.surface1).cornerRadius(18)
-        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.green.opacity(0.35), lineWidth: 1))
-    }
-
-    // MARK: Ranked list card
-    private var rankCard: some View {
-        let shown = Array(ranked.prefix(20))
+    // MARK: Pie card
+    private var pieCard: some View {
+        let total = Int((pieBatting + pieBowling + pieFielding).rounded())
         return CricketCard {
-            CardHeader(title: "Calories Burned")
-            ForEach(Array(shown.enumerated()), id: \.element.persistentModelID) { idx, p in
+            CardHeader(title: pieUsesToday ? "Today's Breakdown" : "Breakdown · Last 30 Days")
+            VStack(spacing: 16) {
+                ZStack {
+                    Chart(segments) { seg in
+                        SectorMark(
+                            angle: .value("kcal", seg.value),
+                            innerRadius: .ratio(0.60),
+                            angularInset: 2
+                        )
+                        .cornerRadius(4)
+                        .foregroundStyle(seg.color)
+                    }
+                    .frame(height: 180)
+
+                    VStack(spacing: 1) {
+                        Text("\(total)").font(.system(size: 26, weight: .black)).foregroundColor(Theme.text)
+                        Text("kcal").font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.text3)
+                    }
+                }
+
+                VStack(spacing: 8) {
+                    ForEach(segments) { seg in
+                        HStack(spacing: 10) {
+                            Circle().fill(seg.color).frame(width: 10, height: 10)
+                            Text(seg.label).font(.system(size: 13, weight: .semibold)).foregroundColor(Theme.text)
+                            Spacer()
+                            Text("\(Int(seg.value.rounded())) kcal")
+                                .font(.system(size: 13, weight: .bold)).foregroundColor(Theme.text)
+                            Text(total > 0 ? "\(Int((seg.value / Double(total) * 100).rounded()))%" : "0%")
+                                .font(.system(size: 11, weight: .semibold)).foregroundColor(Theme.text3)
+                                .frame(width: 40, alignment: .trailing)
+                        }
+                    }
+                }
+            }
+            .padding(16)
+        }
+    }
+
+    // MARK: 30-day history list
+    private var historyCard: some View {
+        CricketCard {
+            CardHeader(title: "Last 30 Days")
+            ForEach(Array(dailyHistory.enumerated()), id: \.element.id) { idx, day in
                 HStack(spacing: 12) {
-                    Text("\(idx + 1)").font(.system(size: 13, weight: .black))
-                        .foregroundColor(idx < 3 ? Theme.gold : Theme.text3).frame(width: 20)
-                    PlayerAvatar(name: p.name, role: p.role, size: 34)
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(p.name).font(.system(size: 14, weight: .bold)).foregroundColor(Theme.text).lineLimit(1)
-                        Text("Bat \(Int(p.battingCalories.rounded())) · Bowl \(Int(p.bowlingCalories.rounded())) · \(p.matches) \(p.matches == 1 ? "match" : "matches")")
+                        Text(dayLabel(day.date)).font(.system(size: 14, weight: .bold)).foregroundColor(Theme.text)
+                        Text("Bat \(day.batting) · Bowl \(day.bowling) · Field \(day.fielding)")
                             .font(.system(size: 11)).foregroundColor(Theme.text3)
                     }
                     Spacer()
                     HStack(alignment: .bottom, spacing: 3) {
-                        Text("\(p.caloriesBurned)").font(.system(size: 20, weight: .black)).foregroundColor(Theme.gold)
+                        Text("\(day.total)").font(.system(size: 20, weight: .black)).foregroundColor(Theme.gold)
                         Text("kcal").font(.system(size: 10, weight: .semibold)).foregroundColor(Theme.text3).padding(.bottom, 3)
                     }
                 }
                 .padding(.horizontal, 16).padding(.vertical, 11)
-                if idx < shown.count - 1 {
-                    Divider().background(Theme.border).padding(.leading, 60)
+                if idx < dailyHistory.count - 1 {
+                    Divider().background(Theme.border).padding(.leading, 16)
                 }
             }
         }
     }
 
+    private func dayLabel(_ date: Date) -> String {
+        if calendar.isDateInToday(date) { return "Today" }
+        if calendar.isDateInYesterday(date) { return "Yesterday" }
+        return date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+    }
+
     private var disclaimer: some View {
-        Text("Estimated from batting, bowling and fielding activity across all matches. For fun, not medical accuracy.")
+        Text("Estimated from your batting, bowling and fielding activity. For fun, not medical accuracy.")
             .font(.system(size: 11)).foregroundColor(Theme.text3)
             .multilineTextAlignment(.center).lineSpacing(2)
             .frame(maxWidth: .infinity)
@@ -1252,7 +1345,7 @@ struct CaloriesView: View {
             Spacer()
             Text("🔥").font(.system(size: 54))
             Text("No calories yet").font(.system(size: 18, weight: .bold)).foregroundColor(Theme.text)
-            Text("Finish a match to see how many calories\neach player burned batting and bowling.")
+            Text("Play a match as \(profile?.displayName ?? "yourself") to see how\nmany calories you burned batting and bowling.")
                 .font(.system(size: 13)).foregroundColor(Theme.text2)
                 .multilineTextAlignment(.center).lineSpacing(3)
             Spacer(); Spacer()
@@ -1260,4 +1353,22 @@ struct CaloriesView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 30)
     }
+}
+
+// A single wedge of the calories pie chart.
+private struct CalorieSegment: Identifiable {
+    let id = UUID()
+    let label: String
+    let value: Double
+    let color: Color
+}
+
+// Calories burned on one calendar day, aggregated across that day's matches.
+private struct DayTotal: Identifiable {
+    var id: Date { date }
+    let date: Date
+    let batting: Int
+    let bowling: Int
+    let fielding: Int
+    let total: Int
 }

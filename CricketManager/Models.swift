@@ -103,6 +103,34 @@ final class PlayerCareerStat {
     var economy: Double { ballsBowled > 0 ? Double(runsConceded) / (Double(ballsBowled) / 6.0) : 0 }
 }
 
+// MARK: - Calorie entry (SwiftData)
+// A dated record of the calories a player burned in a single finished match,
+// split by batting, bowling and fielding. Unlike PlayerCareerStat (which only
+// keeps all-time totals), these carry a date so the Calories tab can show
+// today's burn and a rolling 30-day history. One entry is created per player
+// per match when the match ends.
+@Model
+final class CalorieEntry {
+    @Attribute(.unique) var id: UUID = UUID()
+    var date: Date = Date.now
+    var playerName: String = ""
+    var battingCalories: Double = 0
+    var bowlingCalories: Double = 0
+    var fieldingCalories: Double = 0
+
+    init(id: UUID = UUID(), date: Date = .now, playerName: String,
+         battingCalories: Double, bowlingCalories: Double, fieldingCalories: Double) {
+        self.id = id
+        self.date = date
+        self.playerName = playerName
+        self.battingCalories = battingCalories
+        self.bowlingCalories = bowlingCalories
+        self.fieldingCalories = fieldingCalories
+    }
+
+    var total: Int { Int((battingCalories + bowlingCalories + fieldingCalories).rounded()) }
+}
+
 // MARK: - Completed match (SwiftData)
 // A durable record of a finished match, saved once when the result screen appears.
 // This powers the History tab so past results (and their winners) persist across
@@ -148,11 +176,13 @@ final class CompletedMatch {
 }
 
 // MARK: - Registered player (SwiftData)
-// A self-registered player profile. First and last name are required; the profile
-// photo, phone, and email are optional. Photo bytes are kept in external storage
-// so large images don't bloat the main store.
+// A self-registered player profile. First name, last name and phone number are
+// required, and each player is identified by a unique id. Phone numbers must be
+// unique across players (enforced at registration). Email and photo are optional;
+// photo bytes are kept in external storage so large images don't bloat the store.
 @Model
 final class RegisteredPlayer {
+    @Attribute(.unique) var id: UUID = UUID()
     var firstName: String = ""
     var lastName: String = ""
     var phone: String = ""
@@ -160,7 +190,8 @@ final class RegisteredPlayer {
     @Attribute(.externalStorage) var photoData: Data?
     var createdAt: Date = Date.now
 
-    init(firstName: String, lastName: String, phone: String = "", email: String = "", photoData: Data? = nil) {
+    init(id: UUID = UUID(), firstName: String, lastName: String, phone: String = "", email: String = "", photoData: Data? = nil) {
+        self.id = id
         self.firstName = firstName
         self.lastName = lastName
         self.phone = phone
@@ -176,6 +207,8 @@ final class RegisteredPlayer {
         let l = lastName.first.map { String($0) } ?? ""
         return (f + l).uppercased()
     }
+    /// Phone with only its digits, used to compare numbers regardless of formatting.
+    var normalizedPhone: String { phone.filter(\.isNumber) }
 }
 
 // MARK: - Ball event

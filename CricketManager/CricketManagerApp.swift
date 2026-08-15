@@ -12,7 +12,7 @@ struct CricketManagerApp: App {
                 .preferredColorScheme(themeMode.colorScheme)
                 .buttonStyle(FeedbackButtonStyle())
         }
-        .modelContainer(for: [SavedTeam.self, PlayerCareerStat.self, RegisteredPlayer.self, CompletedMatch.self, UserProfile.self])
+        .modelContainer(for: [SavedTeam.self, PlayerCareerStat.self, RegisteredPlayer.self, CompletedMatch.self, UserProfile.self, CalorieEntry.self])
     }
 }
 
@@ -27,10 +27,9 @@ struct RootView: View {
             VStack(spacing: 0) {
                 Group {
                     switch appVM.selectedTab {
-                    case 0: TeamsView()
+                    case 0: HomeView()
                     case 1: MatchSetupView()
-                    case 2: LeaderboardView()
-                    case 3: CaloriesView()
+                    case 2: CaloriesView()
                     default: MoreView()
                     }
                 }
@@ -104,7 +103,7 @@ struct SplashView: View {
 
 struct CustomTabBar: View {
     @EnvironmentObject var appVM: AppViewModel
-    let tabs: [(String, String, Int)] = [("person.2.fill","Teams",0),("sportscourt.fill","Match",1),("trophy.fill","Stats",2),("flame.fill","Calories",3),("ellipsis.circle.fill","More",4)]
+    let tabs: [(String, String, Int)] = [("house.fill","Home",0),("sportscourt.fill","My Cricket",1),("flame.fill","Calories",2),("ellipsis.circle.fill","More",3)]
     var body: some View {
         HStack(spacing: 0) {
             ForEach(tabs, id: \.2) { icon, label, idx in
@@ -133,11 +132,12 @@ struct CustomTabBar: View {
 }
 
 // MARK: - More Tab
-// Groups the secondary screens (History, Players, Settings) under a single tab
-// to keep the main tab bar simple. Shows a menu of destinations and slides the
-// selected screen in with a Back control.
+// Groups the secondary screens (Teams, Stats, History, Players, Settings) under a
+// single tab to keep the main tab bar simple. Shows a menu of destinations and
+// slides the selected screen in with a Back control.
 struct MoreView: View {
     @State private var selection: MoreDestination? = nil
+    @AppStorage(loggedInPhoneStorageKey) private var loggedInPhone = ""
 
     var body: some View {
         Group {
@@ -170,7 +170,7 @@ struct MoreView: View {
     private var menu: some View {
         ScrollView {
             VStack(spacing: 20) {
-                PageHeader(title: "More", subtitle: "History, players & settings").padding(.top, 8)
+                PageHeader(title: "More", subtitle: "Teams, stats, players & settings").padding(.top, 8)
 
                 CricketCard {
                     CardHeader(title: "More")
@@ -201,6 +201,18 @@ struct MoreView: View {
                     }
                 }
 
+                // Log Out returns to the login gate (the profile itself is kept,
+                // so signing back in restores it).
+                Button(role: .destructive) { loggedInPhone = "" } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "rectangle.portrait.and.arrow.right")
+                        Text("Log Out").font(.system(size: 15, weight: .bold)).tracking(1)
+                    }
+                    .foregroundColor(Theme.red).frame(maxWidth: .infinity).padding(.vertical, 15)
+                    .background(Theme.red.opacity(0.12)).cornerRadius(14)
+                    .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.red.opacity(0.3), lineWidth: 1))
+                }
+
                 Spacer(minLength: 80)
             }
             .padding(.horizontal, 16)
@@ -210,7 +222,8 @@ struct MoreView: View {
     @ViewBuilder
     private func destinationView(for item: MoreDestination) -> some View {
         switch item {
-        case .profile:  ProfileView()
+        case .teams:    TeamsView()
+        case .stats:    LeaderboardView()
         case .history:  MatchHistoryView()
         case .players:  PlayersView()
         case .settings: SettingsView()
@@ -219,11 +232,12 @@ struct MoreView: View {
 }
 
 enum MoreDestination: CaseIterable, Hashable {
-    case profile, history, players, settings
+    case teams, stats, history, players, settings
 
     var title: String {
         switch self {
-        case .profile:  return "Profile"
+        case .teams:    return "Teams"
+        case .stats:    return "Stats"
         case .history:  return "History"
         case .players:  return "Players"
         case .settings: return "Settings"
@@ -232,9 +246,10 @@ enum MoreDestination: CaseIterable, Hashable {
 
     var icon: String {
         switch self {
-        case .profile:  return "person.crop.circle.fill"
+        case .teams:    return "person.2.fill"
+        case .stats:    return "trophy.fill"
         case .history:  return "flag.checkered"
-        case .players:  return "person.2.fill"
+        case .players:  return "person.crop.rectangle.stack.fill"
         case .settings: return "gearshape.fill"
         }
     }

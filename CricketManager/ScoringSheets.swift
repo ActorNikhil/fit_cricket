@@ -90,15 +90,27 @@ struct WicketSheet: View {
                             }
                         }
 
-                        // Confirm
-                        Button {
-                            vm.addBall(.wicket(selectedDismissal, runs))
-                            vm.showWicketSheet = false
-                            if let b = selectedBatter { vm.sendInBatter(b, asStriker: true) }
-                        } label: {
-                            Text("Confirm Wicket").font(.system(size: 15, weight: .bold)).tracking(1.5)
-                                .foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 16)
-                                .background(Theme.red.opacity(0.8)).cornerRadius(14)
+                        // Confirm — allowed only once the next batter is picked.
+                        // (When no batters remain, this is the final wicket and none
+                        // is needed, so confirming is allowed.)
+                        let needsNextBatter = !vm.availableBatters.isEmpty
+                        let canConfirm = selectedBatter != nil || !needsNextBatter
+
+                        VStack(spacing: 8) {
+                            if needsNextBatter && selectedBatter == nil {
+                                Text("Select the next batter to continue")
+                                    .font(.system(size: 12)).foregroundColor(Theme.text3)
+                            }
+                            Button {
+                                vm.addBall(.wicket(selectedDismissal, runs))
+                                vm.showWicketSheet = false
+                                if let b = selectedBatter { vm.sendInBatter(b, asStriker: true) }
+                            } label: {
+                                Text("Confirm Wicket").font(.system(size: 15, weight: .bold)).tracking(1.5)
+                                    .foregroundColor(.white).frame(maxWidth: .infinity).padding(.vertical, 16)
+                                    .background(Theme.red.opacity(canConfirm ? 0.8 : 0.3)).cornerRadius(14)
+                            }
+                            .disabled(!canConfirm)
                         }
                         .padding(.bottom, 20)
                     }

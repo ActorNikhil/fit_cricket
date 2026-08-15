@@ -189,22 +189,31 @@ class ScoringViewModel: ObservableObject {
 
     // MARK: - Change Batter
     func sendInBatter(_ player: Player, asStriker: Bool) {
+        let creaseIndex = asStriker ? innings.currentStrikerIndex : innings.currentNonStrikerIndex
+        let occupantIsOut = creaseIndex < innings.batterStats.count && innings.batterStats[creaseIndex].isOut
         let new = BatterStats(player: player, isOnStrike: asStriker)
-        if asStriker {
-            if innings.currentStrikerIndex < innings.batterStats.count {
-                innings.batterStats[innings.currentStrikerIndex] = new
-            } else {
-                innings.batterStats.append(new)
-                innings.currentStrikerIndex = innings.batterStats.count - 1
-            }
+
+        if creaseIndex < innings.batterStats.count && !occupantIsOut {
+            // Manual change of a batter still at the crease: replace in place.
+            innings.batterStats[creaseIndex] = new
         } else {
-            if innings.currentNonStrikerIndex < innings.batterStats.count {
-                innings.batterStats[innings.currentNonStrikerIndex] = new
+            // A dismissed batter (or empty crease) is being replaced: keep the out
+            // batter's record in the scorecard and append the incoming batter, then
+            // point the vacated crease at the new entry. This preserves the full
+            // batting card and ensures an out batter can never be sent in again
+            // (availableBatters excludes anyone already in batterStats).
+            if creaseIndex < innings.batterStats.count {
+                innings.batterStats[creaseIndex].isOnStrike = false
+            }
+            innings.batterStats.append(new)
+            let newIndex = innings.batterStats.count - 1
+            if asStriker {
+                innings.currentStrikerIndex = newIndex
             } else {
-                innings.batterStats.append(new)
-                innings.currentNonStrikerIndex = innings.batterStats.count - 1
+                innings.currentNonStrikerIndex = newIndex
             }
         }
+
         showChangeBatterSheet = false
         newBatterName = ""
         selectedNewBatter = nil

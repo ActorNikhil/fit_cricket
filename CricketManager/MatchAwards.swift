@@ -257,6 +257,19 @@ extension ScoringViewModel {
             stat.runsConceded += l.runsConceded
             stat.highScore = max(stat.highScore, l.runs)
             stat.bestBowling = max(stat.bestBowling, l.wickets)
+
+            // Also record a dated calorie entry for this match so the Calories tab
+            // can show today's burn and a 30-day history. Uses the same estimates
+            // as PlayerCareerStat's calorie extension (see CaloriesView).
+            let runningRuns = max(0, l.runs - l.fours * 4 - l.sixes * 6)
+            let batting = Double(l.balls) * 0.6 + Double(runningRuns) * 3.5
+                + Double(l.fours) * 2.0 + Double(l.sixes) * 4.0
+            let bowling = Double(l.ballsBowled) * 3.0
+            let fielding = 45.0   // general fielding per match played
+            context.insert(CalorieEntry(playerName: name,
+                                        battingCalories: batting,
+                                        bowlingCalories: bowling,
+                                        fieldingCalories: fielding))
         }
 
         try? context.save()

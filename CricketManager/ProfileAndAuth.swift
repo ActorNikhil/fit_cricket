@@ -233,6 +233,267 @@ struct LoginView: View {
     }
 }
 
+// MARK: - Home (Home tab)
+// The landing screen for the "Home" tab, following a dashboard layout: a title
+// bar with quick actions, a highlighted feature card, a "You" row that opens the
+// profile, and a list of the user's recent matches. Tapping the profile icon
+// slides in the full profile details/editor (ProfileView), reusing the same
+// state-driven push + back bar pattern as MoreView to keep the dark theme.
+struct HomeView: View {
+    @EnvironmentObject private var appVM: AppViewModel
+    @Query private var profiles: [UserProfile]
+    @Query(sort: \CompletedMatch.date, order: .reverse) private var matches: [CompletedMatch]
+    @State private var showDetails = false
+
+    private var profile: UserProfile? { profiles.first }
+
+    var body: some View {
+        Group {
+            if showDetails {
+                detailsScreen
+            } else {
+                home
+            }
+        }
+    }
+
+    // MARK: Home dashboard
+    private var home: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                featureCard
+                youRow
+                matchesSection
+                Spacer(minLength: 40)
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+        }
+    }
+
+    // Title bar: "Home" with quick-action icons on the right.
+    private var header: some View {
+        HStack(alignment: .center) {
+            Text("Home").font(.system(size: 30, weight: .black)).foregroundColor(Theme.text)
+            Spacer()
+            HStack(spacing: 12) {
+                circleIcon("bubble.left.and.bubble.right.fill")
+                circleIcon("bell.fill")
+                Button { appVM.selectedTab = 1 } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .bold)).foregroundColor(.white)
+                        .frame(width: 40, height: 40)
+                        .background(Theme.green).clipShape(Circle())
+                }
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private func circleIcon(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 16, weight: .semibold)).foregroundColor(Theme.text2)
+            .frame(width: 40, height: 40)
+            .background(Theme.surface2).clipShape(Circle())
+            .overlay(Circle().stroke(Theme.border, lineWidth: 1))
+    }
+
+    // Highlighted feature card (banner-style call to action).
+    private var featureCard: some View {
+        VStack(spacing: 10) {
+            Text("Where do you score most?")
+                .font(.system(size: 17, weight: .bold)).foregroundColor(Theme.text)
+            Text("Track your batting, bowling & calories")
+                .font(.system(size: 13)).foregroundColor(Theme.text3)
+            Button { appVM.selectedTab = 1 } label: {
+                Text("Start a match")
+                    .font(.system(size: 14, weight: .bold)).foregroundColor(.white)
+                    .padding(.horizontal, 22).padding(.vertical, 10)
+                    .background(Theme.green).clipShape(Capsule())
+            }
+            .padding(.top, 2)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 20).padding(.horizontal, 16)
+        .background(Theme.surface1).cornerRadius(18)
+        .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.border, lineWidth: 1))
+    }
+
+    // "You" row: tappable profile icon + a prompt bubble.
+    private var youRow: some View {
+        HStack(alignment: .top, spacing: 14) {
+            Button {
+                withAnimation(.easeInOut(duration: 0.2)) { showDetails = true }
+            } label: {
+                VStack(spacing: 6) {
+                    ZStack(alignment: .bottomTrailing) {
+                        profileAvatar(size: 60)
+                        Image(systemName: "plus.circle.fill")
+                            .font(.system(size: 18)).foregroundColor(Theme.green)
+                            .background(Circle().fill(Theme.bg))
+                    }
+                    Text("You").font(.system(size: 12, weight: .semibold)).foregroundColor(Theme.text2)
+                }
+            }
+            .buttonStyle(FeedbackButtonStyle())
+
+            Text("Tap your photo to view and edit your profile details.")
+                .font(.system(size: 13)).foregroundColor(Theme.text3)
+                .padding(12)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Theme.surface2).cornerRadius(14)
+                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.border, lineWidth: 1))
+        }
+    }
+
+    // MARK: Matches of your interest
+    private var matchesSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Matches of your interest")
+                    .font(.system(size: 17, weight: .bold)).foregroundColor(Theme.text)
+                Spacer()
+                Button { appVM.selectedTab = 3 } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 14, weight: .bold)).foregroundColor(Theme.text3)
+                }
+            }
+
+            if matches.isEmpty {
+                VStack(spacing: 8) {
+                    Text("🏏").font(.system(size: 36))
+                    Text("No matches yet")
+                        .font(.system(size: 14, weight: .bold)).foregroundColor(Theme.text)
+                    Text("Finish a match and it will show up here.")
+                        .font(.system(size: 12)).foregroundColor(Theme.text3)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 30)
+                .background(Theme.surface1).cornerRadius(18)
+                .overlay(RoundedRectangle(cornerRadius: 18).stroke(Theme.border, lineWidth: 1))
+            } else {
+                ForEach(matches.prefix(3)) { match in
+                    HomeMatchCard(match: match)
+                }
+            }
+        }
+    }
+
+    // MARK: Profile details (pushed screen)
+    private var detailsScreen: some View {
+        VStack(spacing: 0) {
+            // Back bar returning to the Home dashboard.
+            HStack(spacing: 6) {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) { showDetails = false }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "chevron.left").font(.system(size: 16, weight: .semibold))
+                        Text("Home").font(.system(size: 15, weight: .semibold))
+                    }
+                    .foregroundColor(Theme.gold)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 16).padding(.top, 10).padding(.bottom, 2)
+
+            ProfileView()
+        }
+        .transition(.move(edge: .trailing).combined(with: .opacity))
+    }
+
+    // Circular profile icon: the user's photo if set, otherwise their initials.
+    @ViewBuilder
+    private func profileAvatar(size: CGFloat) -> some View {
+        let image = profile?.photoData.flatMap { UIImage(data: $0) }
+        let initials = (profile?.initials.isEmpty == false) ? (profile?.initials ?? "?") : "?"
+        ZStack {
+            if let image {
+                Image(uiImage: image).resizable().scaledToFill()
+                    .frame(width: size, height: size).clipShape(Circle())
+            } else {
+                Circle().fill(Theme.gold.opacity(0.15)).frame(width: size, height: size)
+                    .overlay(
+                        Text(initials)
+                            .font(.system(size: size * 0.34, weight: .bold)).foregroundColor(Theme.gold)
+                    )
+            }
+            Circle().stroke(Theme.gold.opacity(0.5), lineWidth: 2).frame(width: size, height: size)
+        }
+    }
+}
+
+// MARK: - Home match card
+// A compact recent-match summary shown on the Home tab, styled after the
+// "Matches of your interest" cards: teams, both innings' scores, and the result.
+private struct HomeMatchCard: View {
+    let match: CompletedMatch
+
+    private var dateText: String { match.date.formatted(date: .abbreviated, time: .omitted) }
+
+    var body: some View {
+        CricketCard {
+            VStack(alignment: .leading, spacing: 0) {
+                // Title row: teams + result badge
+                HStack(spacing: 8) {
+                    Image(systemName: "person.2.fill")
+                        .font(.system(size: 12)).foregroundColor(Theme.gold)
+                    Text("\(match.firstBattingTeam) vs \(match.secondBattingTeam)")
+                        .font(.system(size: 13, weight: .bold)).foregroundColor(Theme.text)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                    Spacer()
+                    Text(match.isTie ? "Tie" : "Result")
+                        .font(.system(size: 10, weight: .bold)).foregroundColor(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(Theme.green).clipShape(Capsule())
+                }
+                .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 8)
+
+                HStack {
+                    Text("\(dateText) · \(match.totalOvers) ov")
+                        .font(.system(size: 11)).foregroundColor(Theme.text3)
+                    Spacer()
+                }
+                .padding(.horizontal, 14).padding(.bottom, 10)
+
+                Divider().background(Theme.border)
+
+                // Scores
+                VStack(spacing: 8) {
+                    scoreRow(team: match.firstBattingTeam,
+                             score: "\(match.firstRuns)/\(match.firstWickets)",
+                             overs: match.firstOvers)
+                    scoreRow(team: match.secondBattingTeam,
+                             score: "\(match.secondRuns)/\(match.secondWickets)",
+                             overs: match.secondOvers)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+
+                Divider().background(Theme.border)
+
+                Text(match.resultText.isEmpty ? "Match completed" : match.resultText)
+                    .font(.system(size: 12, weight: .bold)).foregroundColor(Theme.gold)
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+            }
+        }
+    }
+
+    private func scoreRow(team: String, score: String, overs: String) -> some View {
+        HStack {
+            Text(team.isEmpty ? "—" : team)
+                .font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.text)
+                .lineLimit(1).minimumScaleFactor(0.8)
+            Spacer()
+            HStack(alignment: .bottom, spacing: 6) {
+                Text(score).font(.system(size: 15, weight: .black)).foregroundColor(Theme.text)
+                Text(overs.isEmpty ? "" : "(\(overs) Ov)")
+                    .font(.system(size: 11)).foregroundColor(Theme.text3)
+            }
+        }
+    }
+}
+
 // MARK: - Profile
 // Shows and edits the owner's profile. Editing writes straight through to the
 // SwiftData model via @Bindable. Includes a Log Out control that returns to the
@@ -263,18 +524,33 @@ struct ProfileView: View {
 }
 
 // MARK: - Profile editor
-// Editing form for the owner's profile. Split into its own view so the SwiftData
-// model can be bound with @Bindable (edits write straight through to the store)
-// without capturing a local var inside SwiftUI's escaping view builders.
+// Editing form for the owner's profile. Edits are kept in local draft state and
+// only written to the SwiftData model when the user taps Save, so nothing is
+// persisted until they confirm.
 private struct ProfileEditorView: View {
-    @Bindable var profile: UserProfile
-    @AppStorage(loggedInPhoneStorageKey) private var loggedInPhone = ""
+    let profile: UserProfile
+    @Environment(\.modelContext) private var context
+
+    // Draft copies of the editable fields; committed to the model on Save.
+    @State private var firstName = ""
+    @State private var lastName = ""
+    @State private var email = ""
+    @State private var photoData: Data?
     @State private var photoItem: PhotosPickerItem?
-    @State private var pickedPhotoData: Data?
+    @State private var didSave = false
+
+    // Whether the draft differs from what's currently stored.
+    private var hasChanges: Bool {
+        firstName != profile.firstName
+        || lastName != profile.lastName
+        || email != profile.email
+        || photoData != profile.photoData
+    }
 
     var body: some View {
-        let previewImage = profile.photoData.flatMap { UIImage(data: $0) }
-        let avatarInitials = profile.initials.isEmpty ? "?" : profile.initials
+        let previewImage = photoData.flatMap { UIImage(data: $0) }
+        let trimmed = (firstName.first.map { String($0) } ?? "") + (lastName.first.map { String($0) } ?? "")
+        let avatarInitials = trimmed.isEmpty ? "?" : trimmed.uppercased()
 
         VStack(spacing: 16) {
             // Avatar + photo picker
@@ -302,8 +578,8 @@ private struct ProfileEditorView: View {
             CricketCard {
                 CardHeader(title: "Name")
                 VStack(spacing: 10) {
-                    profileField("First name", text: $profile.firstName, icon: "person.fill")
-                    profileField("Last name", text: $profile.lastName, icon: "person.fill")
+                    profileField("First name", text: $firstName, icon: "person.fill")
+                    profileField("Last name", text: $lastName, icon: "person.fill")
                 }
                 .padding(14)
             }
@@ -322,33 +598,46 @@ private struct ProfileEditorView: View {
                     .padding(.horizontal, 12).padding(.vertical, 12)
                     .background(Theme.surface2).cornerRadius(10)
 
-                    profileField("Email address", text: $profile.email, icon: "envelope.fill", keyboard: .emailAddress)
+                    profileField("Email address", text: $email, icon: "envelope.fill", keyboard: .emailAddress)
                 }
                 .padding(14)
             }
 
-            Button(role: .destructive) { loggedInPhone = "" } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "rectangle.portrait.and.arrow.right")
-                    Text("Log Out").font(.system(size: 15, weight: .bold)).tracking(1)
-                }
-                .foregroundColor(Theme.red).frame(maxWidth: .infinity).padding(.vertical, 15)
-                .background(Theme.red.opacity(0.12)).cornerRadius(14)
-                .overlay(RoundedRectangle(cornerRadius: 14).stroke(Theme.red.opacity(0.3), lineWidth: 1))
-            }
-            .padding(.top, 4)
+            GoldButton(title: didSave ? "Saved ✓" : "Save", disabled: !hasChanges) { save() }
+                .padding(.top, 4)
         }
-        // Decode the picked image off the model, then mirror it in synchronously —
+        .onAppear(perform: loadDraft)
+        // Decode the picked image off the model, then mirror it into the draft —
         // this keeps the SwiftData model off the concurrent task entirely.
         .onChange(of: photoItem) { _, newItem in
             Task {
                 if let data = try? await newItem?.loadTransferable(type: Data.self) {
-                    pickedPhotoData = data
+                    photoData = data
                 }
             }
         }
-        .onChange(of: pickedPhotoData) { _, newData in
-            if let newData { profile.photoData = newData }
+    }
+
+    // Load the stored values into the draft when the editor appears.
+    private func loadDraft() {
+        firstName = profile.firstName
+        lastName = profile.lastName
+        email = profile.email
+        photoData = profile.photoData
+    }
+
+    // Commit the draft to the SwiftData model.
+    private func save() {
+        profile.firstName = firstName.trimmingCharacters(in: .whitespaces)
+        profile.lastName = lastName.trimmingCharacters(in: .whitespaces)
+        profile.email = email.trimmingCharacters(in: .whitespaces)
+        profile.photoData = photoData
+        try? context.save()
+
+        withAnimation { didSave = true }
+        Task {
+            try? await Task.sleep(for: .seconds(1.6))
+            withAnimation { didSave = false }
         }
     }
 
