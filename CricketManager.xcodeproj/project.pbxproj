@@ -11,6 +11,10 @@
 		16FB028830249989001FC555 /* Feedback.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB028730249989001FC555 /* Feedback.swift */; };
 		16FB028C3026E669001FC555 /* MatchHistoryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB028B3026E669001FC555 /* MatchHistoryView.swift */; };
 		16FB0290302D5C4A001FC555 /* ProfileAndAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB028F302D5C4A001FC555 /* ProfileAndAuth.swift */; };
+		16FB029330327BCF001FC555 /* SupabaseManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB029230327BCF001FC555 /* SupabaseManager.swift */; };
+		16FB029530327BD8001FC555 /* AuthModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB029430327BD8001FC555 /* AuthModel.swift */; };
+		16FB02983032B233001FC555 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 16FB02973032B233001FC555 /* Supabase */; };
+		16FB029A3032B53E001FC555 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB02993032B53E001FC555 /* SyncEngine.swift */; };
 		AA000001 /* CricketManagerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000001 /* CricketManagerApp.swift */; };
 		AA000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000002 /* Models.swift */; };
 		AA000003 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000003 /* Theme.swift */; };
@@ -30,6 +34,9 @@
 		16FB028730249989001FC555 /* Feedback.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Feedback.swift; sourceTree = "<group>"; };
 		16FB028B3026E669001FC555 /* MatchHistoryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchHistoryView.swift; sourceTree = "<group>"; };
 		16FB028F302D5C4A001FC555 /* ProfileAndAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileAndAuth.swift; sourceTree = "<group>"; };
+		16FB029230327BCF001FC555 /* SupabaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseManager.swift; sourceTree = "<group>"; };
+		16FB029430327BD8001FC555 /* AuthModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModel.swift; sourceTree = "<group>"; };
+		16FB02993032B53E001FC555 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
 		AF000000 /* CricketManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CricketManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF000001 /* CricketManagerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CricketManagerApp.swift; sourceTree = "<group>"; };
 		AF000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -51,16 +58,25 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				16FB02983032B233001FC555 /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		16FB02963032B1E5001FC555 /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+			);
+			name = Frameworks;
+			sourceTree = "<group>";
+		};
 		BB111111 = {
 			isa = PBXGroup;
 			children = (
 				CC000001 /* CricketManager */,
+				16FB02963032B1E5001FC555 /* Frameworks */,
 				CC000002 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -85,6 +101,9 @@
 				16FB028730249989001FC555 /* Feedback.swift */,
 				16FB028B3026E669001FC555 /* MatchHistoryView.swift */,
 				16FB028F302D5C4A001FC555 /* ProfileAndAuth.swift */,
+				16FB029230327BCF001FC555 /* SupabaseManager.swift */,
+				16FB029430327BD8001FC555 /* AuthModel.swift */,
+				16FB02993032B53E001FC555 /* SyncEngine.swift */,
 			);
 			path = CricketManager;
 			sourceTree = "<group>";
@@ -141,6 +160,9 @@
 				Base,
 			);
 			mainGroup = BB111111;
+			packageReferences = (
+				16FB029130327B4E001FC555 /* XCRemoteSwiftPackageReference "supabase-swift" */,
+			);
 			productRefGroup = CC000002 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -174,13 +196,16 @@
 				16FB028C3026E669001FC555 /* MatchHistoryView.swift in Sources */,
 				AA000005 /* ScoringViewModel.swift in Sources */,
 				AA000006 /* TeamsViewModel.swift in Sources */,
+				16FB029A3032B53E001FC555 /* SyncEngine.swift in Sources */,
 				AA000007 /* TeamsAndMatchViews.swift in Sources */,
 				AA000008 /* ScoringView.swift in Sources */,
+				16FB029530327BD8001FC555 /* AuthModel.swift in Sources */,
 				AA000009 /* ScoringSheets.swift in Sources */,
 				16FB0284301FC1F6001FC555 /* SettingsView.swift in Sources */,
 				16FB0290302D5C4A001FC555 /* ProfileAndAuth.swift in Sources */,
 				AA000013 /* MatchAwards.swift in Sources */,
 				AA000014 /* MatchResultView.swift in Sources */,
+				16FB029330327BCF001FC555 /* SupabaseManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -304,6 +329,25 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		16FB029130327B4E001FC555 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 2.5.1;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		16FB02973032B233001FC555 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 16FB029130327B4E001FC555 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = CC000000 /* Project object */;
 }

@@ -43,6 +43,7 @@ struct CricketTeam: Identifiable, Codable {
 // team later never mutates a match that is already in progress or finished.
 @Model
 final class SavedTeam {
+    var remoteID: UUID = UUID()   // stable id used to sync this row to Supabase
     var name: String = ""
     var createdAt: Date = Date.now
     @Relationship(deleteRule: .cascade, inverse: \SavedPlayer.team)
@@ -64,6 +65,7 @@ final class SavedTeam {
 
 @Model
 final class SavedPlayer {
+    var remoteID: UUID = UUID()   // stable id used to sync this row to Supabase
     var name: String = ""
     var role: PlayerRole = PlayerRole.bat
     var order: Int = 0
@@ -81,6 +83,7 @@ final class SavedPlayer {
 // This is what powers the leaderboard (top run scorers / wicket takers across matches).
 @Model
 final class PlayerCareerStat {
+    var remoteID: UUID = UUID()   // stable id used to sync this row to Supabase
     var name: String = ""
     var role: PlayerRole = PlayerRole.bat
     var matches: Int = 0
@@ -138,6 +141,7 @@ final class CalorieEntry {
 // so they never change if the underlying teams are later edited or deleted.
 @Model
 final class CompletedMatch {
+    var remoteID: UUID = UUID()   // stable id used to sync this row to Supabase
     var date: Date = Date.now
     var firstBattingTeam: String = ""
     var firstRuns: Int = 0

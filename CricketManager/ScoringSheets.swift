@@ -230,6 +230,7 @@ struct ChangeBatterSheet: View {
     @State private var newName: String = ""
     @State private var newRole: PlayerRole = .bat
     @State private var selectedPlayer: Player? = nil
+    @FocusState private var nameFocused: Bool
 
     var replacing: String {
         let idx = vm.replacingStrikerIndex
@@ -273,10 +274,12 @@ struct ChangeBatterSheet: View {
                                 }
                                 HStack(spacing: 8) {
                                     TextField("Player name…", text: $newName)
+                                        .autocorrectionDisabled()
+                                        .focused($nameFocused)
                                         .font(.system(size: 14)).foregroundColor(Theme.text)
                                         .padding(.horizontal, 13).padding(.vertical, 10)
                                         .background(Theme.surface3).cornerRadius(10)
-                                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.gold.opacity(0.3), lineWidth: 1.5))
+                                        .overlay(RoundedRectangle(cornerRadius: 10).stroke(nameFocused ? Theme.gold : Theme.gold.opacity(0.3), lineWidth: nameFocused ? 2 : 1.5))
                                     Button {
                                         let n = newName.trimmingCharacters(in: .whitespaces)
                                         guard !n.isEmpty else { return }
@@ -339,6 +342,7 @@ struct ChangeBowlerSheet: View {
     @ObservedObject var vm: ScoringViewModel
     @State private var newName: String = ""
     @State private var selectedPlayer: Player? = nil
+    @FocusState private var nameFocused: Bool
 
     var body: some View {
         ZStack { Theme.surface1.ignoresSafeArea()
@@ -360,10 +364,12 @@ struct ChangeBowlerSheet: View {
                             SectionLabel(text: "Add new player").padding(.horizontal, 20)
                             HStack(spacing: 8) {
                                 TextField("Player name…", text: $newName)
+                                    .autocorrectionDisabled()
+                                    .focused($nameFocused)
                                     .font(.system(size: 14)).foregroundColor(Theme.text)
                                     .padding(.horizontal, 13).padding(.vertical, 10)
                                     .background(Theme.surface3).cornerRadius(10)
-                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(Theme.bowl.opacity(0.3), lineWidth: 1.5))
+                                    .overlay(RoundedRectangle(cornerRadius: 10).stroke(nameFocused ? Theme.bowl : Theme.bowl.opacity(0.3), lineWidth: nameFocused ? 2 : 1.5))
                                 Button {
                                     let n = newName.trimmingCharacters(in: .whitespaces)
                                     guard !n.isEmpty else { return }

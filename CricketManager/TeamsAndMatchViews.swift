@@ -138,16 +138,20 @@ struct TeamEditorView: View {
     @State private var newRole: PlayerRole = .bat
     @State private var didConfirm = false
     @FocusState private var focusedField: Field?
-    @Query(sort: \RegisteredPlayer.createdAt, order: .reverse) private var registeredPlayers: [RegisteredPlayer]
     @Query private var allTeams: [SavedTeam]
 
-    private enum Field: Hashable { case teamName }
+    // Directory search (Supabase profiles of everyone who created an account).
+    @State private var searchText = ""
+    @State private var searchResults: [DirectoryPlayer] = []
+    @State private var isSearching = false
+    @State private var searchError: String?
 
-    // Registered players available to add: a player already on any team (this one
-    // or another) can't be added again, so they're excluded here. Matched by full name.
-    private var availablePlayers: [RegisteredPlayer] {
+    private enum Field: Hashable { case teamName, search }
+
+    // Search hits, minus anyone already on a team (matched by display name).
+    private var filteredResults: [DirectoryPlayer] {
         let assigned = Set(allTeams.flatMap { $0.players.map(\.name) })
-        return registeredPlayers.filter { !assigned.contains($0.fullName) }
+        return searchResults.filter { !$0.displayName.isEmpty && !assigned.contains($0.displayName) }
     }
 
     var body: some View {
@@ -157,6 +161,7 @@ struct TeamEditorView: View {
                     CricketCard {
                         HStack {
                             TextField("Team name", text: $team.name)
+                                .autocorrectionDisabled()
                                 .font(.system(size: 20, weight: .bold)).foregroundColor(Theme.green)
                                 .focused($focusedField, equals: .teamName)
                             Spacer()
@@ -189,11 +194,38 @@ struct TeamEditorView: View {
                                     }
                                 }
                             }
-                            if availablePlayers.isEmpty {
-                                Text(registeredPlayers.isEmpty
-                                     ? "No registered players yet. Register players on the Players tab first."
-                                     : "All registered players are already assigned to a team.")
+                            // Search the player directory by name or phone number.
+                            HStack(spacing: 8) {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.system(size: 14)).foregroundColor(Theme.text3)
+                                TextField("Search players by name or phone", text: $searchText)
+                                    .font(.system(size: 14)).foregroundColor(Theme.text)
+                                    .autocorrectionDisabled()
+                                    .textInputAutocapitalization(.never)
+                                    .focused($focusedField, equals: .search)
+                                if isSearching {
+                                    ProgressView().scaleEffect(0.7)
+                                } else if !searchText.isEmpty {
+                                    Button { searchText = ""; searchResults = [] } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 14)).foregroundColor(Theme.text3)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 10)
+                            .background(Theme.surface2).cornerRadius(10)
+                            .overlay(RoundedRectangle(cornerRadius: 10)
+                                .stroke(focusedField == .search ? Theme.green : Theme.border,
+                                        lineWidth: focusedField == .search ? 2 : 1))
+
+                            if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                                Text("Search the player directory to add members to your team.")
                                     .font(.system(size: 12)).foregroundColor(Theme.text3)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.top, 2)
+                            } else if filteredResults.isEmpty && !isSearching {
+                                Text(searchError.map { "Search failed: \($0)" } ?? "No players found for “\(searchText)”.")
+                                    .font(.system(size: 12)).foregroundColor(searchError == nil ? Theme.text3 : Theme.red)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.top, 2)
                             } else {
@@ -201,12 +233,18 @@ struct TeamEditorView: View {
                                     .font(.system(size: 11)).foregroundColor(Theme.text3)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 VStack(spacing: 6) {
-                                    ForEach(availablePlayers) { rp in
-                                        Button { addPlayer(rp) } label: {
+                                    ForEach(filteredResults) { dp in
+                                        Button { addPlayer(named: dp.displayName) } label: {
                                             HStack(spacing: 10) {
-                                                RegisteredAvatar(player: rp, size: 34)
-                                                Text(rp.fullName.isEmpty ? "Unnamed Player" : rp.fullName)
-                                                    .font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.text)
+                                                PlayerAvatar(name: dp.displayName, role: newRole)
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text(dp.displayName)
+                                                        .font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.text)
+                                                    if !dp.phone.isEmpty {
+                                                        Text(dp.phone)
+                                                            .font(.system(size: 11)).foregroundColor(Theme.text3)
+                                                    }
+                                                }
                                                 Spacer()
                                                 Text("+ Add").font(.system(size: 12, weight: .bold)).tracking(1)
                                                     .foregroundColor(Color(hex: "#0a0e1a"))
@@ -244,6 +282,14 @@ struct TeamEditorView: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(isNewTeam ? "New Team" : "Edit Team")
             .navigationBarTitleDisplayMode(.inline)
+            .task(id: searchText) { await runSearch() }
+            .task {
+                // For a brand-new team, focus the name field on appear so the
+                // keyboard is up and the user can type the name right away.
+                guard isNewTeam else { return }
+                try? await Task.sleep(for: .milliseconds(350))
+                focusedField = .teamName
+            }
             .toolbar {
                 if isNewTeam {
                     ToolbarItem(placement: .cancellationAction) {
@@ -270,12 +316,74 @@ struct TeamEditorView: View {
         }
     }
 
-    private func addPlayer(_ registered: RegisteredPlayer) {
-        let name = registered.fullName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
-        let player = SavedPlayer(name: name, role: newRole, order: team.players.count)
+    private func addPlayer(named name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let player = SavedPlayer(name: trimmed, role: newRole, order: team.players.count)
         player.team = team
         context.insert(player)
+        searchText = ""
+        searchResults = []
+    }
+
+    // Debounced directory search (runs whenever searchText changes).
+    private func runSearch() async {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else {
+            searchResults = []
+            isSearching = false
+            return
+        }
+        isSearching = true
+        searchError = nil
+        try? await Task.sleep(for: .milliseconds(300))   // debounce
+        if Task.isCancelled { return }
+        do {
+            let results = try await searchDirectory(query)
+            if Task.isCancelled { return }
+            searchResults = results
+        } catch {
+            if Task.isCancelled { return }
+            searchResults = []
+            searchError = error.localizedDescription
+            #if DEBUG
+            print("[Directory] search error: \(error)")
+            #endif
+        }
+        isSearching = false
+    }
+
+    // Looks players up in the Supabase `profiles` directory by name, phone or email.
+    private func searchDirectory(_ query: String) async throws -> [DirectoryPlayer] {
+        let pattern = "%\(query)%"
+        return try await SupabaseManager.shared.client
+            .from("profiles")
+            .select("id,first_name,last_name,phone,email")
+            .or("first_name.ilike.\(pattern),last_name.ilike.\(pattern),phone.ilike.\(pattern),email.ilike.\(pattern)")
+            .limit(25)
+            .execute()
+            .value
+    }
+}
+
+// A player found in the Supabase directory (the profiles of registered accounts).
+struct DirectoryPlayer: Identifiable, Codable, Sendable {
+    let id: String
+    let first_name: String
+    let last_name: String
+    let phone: String
+    let email: String
+
+    var fullName: String {
+        "\(first_name) \(last_name)".trimmingCharacters(in: .whitespaces)
+    }
+
+    // The name to show/add. Falls back to the email's local part for accounts
+    // that registered but haven't set a name in their profile yet.
+    var displayName: String {
+        let name = fullName
+        if !name.isEmpty { return name }
+        return email.split(separator: "@").first.map(String.init) ?? email
     }
 }
 
@@ -940,7 +1048,7 @@ struct PlayerRegistrationView: View {
                 .keyboardType(keyboard)
                 .textContentType(nil)
                 .textInputAutocapitalization(keyboard == .emailAddress ? .never : .words)
-                .autocorrectionDisabled(keyboard == .emailAddress)
+                .autocorrectionDisabled()
                 .focused($focusedField, equals: field)
                 .submitLabel(.next)
                 .onSubmit { advanceFocus(from: field) }
@@ -1051,6 +1159,8 @@ struct BulkPlayerRegistrationView: View {
                                 .autocorrectionDisabled()
                         }
                         .padding(12)
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .stroke(editorFocused ? Theme.green : Color.clear, lineWidth: 2))
                     }
 
                     // Live summary of what will be added.
