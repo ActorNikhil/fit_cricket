@@ -4,6 +4,7 @@ import SwiftUI
 struct ScoringRootView: View {
     @StateObject var vm: ScoringViewModel
     @EnvironmentObject var appVM: AppViewModel
+    @Environment(\.modelContext) private var context
 
     init(match: Match) {
         _vm = StateObject(wrappedValue: ScoringViewModel(match: match))
@@ -25,15 +26,21 @@ struct ScoringRootView: View {
         .sheet(isPresented: $vm.showChangeBowlerSheet) { ChangeBowlerSheet(vm: vm).presentationDetents([.fraction(0.65)]).presentationDragIndicator(.visible) }
         .sheet(isPresented: $vm.showWicketSheet) { WicketSheet(vm: vm).presentationDetents([.large]).presentationDragIndicator(.visible) }
         .sheet(isPresented: $vm.showExtrasSheet) { ExtrasSheet(vm: vm).presentationDetents([.fraction(0.6)]).presentationDragIndicator(.visible) }
-        .sheet(isPresented: $vm.showEndOfOverSheet) { EndOfOverSheet(vm: vm).presentationDetents([.large]).presentationDragIndicator(.visible) }
+        .sheet(isPresented: $vm.showEndOfOverSheet) { EndOfOverSheet(vm: vm).presentationDetents([.large]).interactiveDismissDisabled() }
         .sheet(isPresented: $vm.showScorecardSheet) { ScorecardSheet(vm: vm).presentationDetents([.large]).presentationDragIndicator(.visible) }
         .sheet(isPresented: $vm.showStartInnings2) { StartInnings2Sheet(vm: vm).presentationDetents([.fraction(0.55)]).presentationDragIndicator(.visible) }
+        .task { vm.startLiveBroadcast(context: context) }
+        // Covers every exit path (match finished or abandoned): the live row is
+        // removed so it can't linger on participants' feeds.
+        .onDisappear { vm.endLiveBroadcast() }
     }
 }
 
 // MARK: - Main Scoring Screen
 struct ScoringView: View {
     @ObservedObject var vm: ScoringViewModel
+    @EnvironmentObject var appVM: AppViewModel
+    @State private var showExitConfirm = false
     var inn: Innings { vm.innings }
 
     var body: some View {
@@ -63,10 +70,26 @@ struct ScoringView: View {
             // Run buttons (always visible at bottom)
             RunInputPanel(vm: vm)
         }
+        .alert("Leave this match?", isPresented: $showExitConfirm) {
+            Button("Cancel", role: .cancel) {}
+            Button("Leave") {
+                appVM.minimizeMatch()  // park it; keep the in-memory match for resume
+            }
+        } message: {
+            Text("The match stays live under \"Matches of your interest\" on the Home tab — tap it there to continue scoring from where you left off.")
+        }
     }
 
     var scoringNavBar: some View {
         HStack {
+            Button { showExitConfirm = true } label: {
+                Image(systemName: "chevron.left")
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundColor(Theme.text2)
+                    .frame(width: 32, height: 32)
+                    .background(Theme.surface2).cornerRadius(8)
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(Theme.border, lineWidth: 1))
+            }
             Button { vm.showScorecardSheet = true } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "list.bullet").font(.system(size: 13))

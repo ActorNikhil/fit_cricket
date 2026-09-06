@@ -138,6 +138,9 @@ struct MatchResultView: View {
         .onAppear {
             vm.recordCareerStats(into: modelContext)
             vm.recordCompletedMatch(into: modelContext)
+            // Push the finished match to the cloud now so participants see it
+            // promptly (instead of waiting for the periodic sync timer).
+            appVM.requestSyncNow()
             confetti.launch(width: UIScreen.main.bounds.width)
             animate()
         }

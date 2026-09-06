@@ -8,9 +8,19 @@ import Charts
 struct TeamsView: View {
     @EnvironmentObject var appVM: AppViewModel
     @Environment(\.modelContext) private var context
+    @Environment(AuthModel.self) private var auth
     @Query(sort: \SavedTeam.createdAt, order: .reverse) private var teams: [SavedTeam]
     @State private var editingTeam: SavedTeam?
     @State private var editingTeamIsNew = false
+
+    // A team is editable only if this account created it. Teams pulled because
+    // the user is a *member* (foreign, non-empty ownerID) are read-only — editing
+    // them locally would just be reverted by the next sync (the owner is the
+    // source of truth), so we don't let the user try.
+    private func isOwned(_ team: SavedTeam) -> Bool {
+        let me = auth.userID?.uuidString ?? ""
+        return team.ownerID.isEmpty || team.ownerID.caseInsensitiveCompare(me) == .orderedSame
+    }
 
     var body: some View {
         NavigationView {
@@ -45,8 +55,14 @@ struct TeamsView: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 40).padding(.horizontal, 20)
                     } else {
                         ForEach(teams) { team in
-                            SavedTeamCard(team: team) { editingTeamIsNew = false; editingTeam = team }
-                                onDelete: { context.delete(team) }
+                            let owned = isOwned(team)
+                            SavedTeamCard(team: team, isOwned: owned) {
+                                guard owned else { return }
+                                editingTeamIsNew = false; editingTeam = team
+                            } onDelete: {
+                                guard owned else { return }
+                                context.delete(team)
+                            }
                         }
                     }
                     Spacer(minLength: 80)
@@ -65,9 +81,17 @@ struct TeamsView: View {
 // MARK: - Saved team card (library row)
 struct SavedTeamCard: View {
     @Bindable var team: SavedTeam
+    var isOwned: Bool = true
     let onEdit: () -> Void
     let onDelete: () -> Void
     var body: some View {
+        // When a team is deleted (e.g. the owner removes a shared team while we're
+        // viewing it), SwiftData cascade-deletes its players. SwiftUI may still
+        // re-run this body for the row being torn down; reading a deleted player's
+        // properties traps. Bail out once the model is detached from its context.
+        if team.modelContext == nil {
+            EmptyView()
+        } else {
         CricketCard {
             Button(action: onEdit) {
                 HStack(spacing: 12) {
@@ -79,11 +103,19 @@ struct SavedTeamCard: View {
                             .font(.system(size: 12)).foregroundColor(Theme.text3)
                     }
                     Spacer()
-                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(Theme.text3)
+                    if isOwned {
+                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(Theme.text3)
+                    } else {
+                        // Read-only: this team belongs to another account; the user
+                        // is just a member, so no edit affordance.
+                        BadgeView(text: "Shared")
+                    }
                 }
                 .padding(.horizontal, 18).padding(.vertical, 16)
             }
+            .disabled(!isOwned)
+
             if !team.orderedPlayers.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(team.orderedPlayers.prefix(6)) { p in
@@ -94,14 +126,16 @@ struct SavedTeamCard: View {
                             .font(.system(size: 11, weight: .bold)).foregroundColor(Theme.text3)
                     }
                     Spacer()
-                    Button(role: .destructive, action: onDelete) {
-                        Image(systemName: "trash").font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(Theme.red).frame(width: 28, height: 28)
-                            .background(Theme.red.opacity(0.12)).cornerRadius(8)
+                    if isOwned {
+                        Button(role: .destructive, action: onDelete) {
+                            Image(systemName: "trash").font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(Theme.red).frame(width: 28, height: 28)
+                                .background(Theme.red.opacity(0.12)).cornerRadius(8)
+                        }
                     }
                 }
                 .padding(.horizontal, 14).padding(.bottom, 12)
-            } else {
+            } else if isOwned {
                 HStack {
                     Text("No players yet").font(.system(size: 12)).foregroundColor(Theme.text3)
                     Spacer()
@@ -113,6 +147,7 @@ struct SavedTeamCard: View {
                 }
                 .padding(.horizontal, 18).padding(.bottom, 12)
             }
+        }
         }
     }
 }
@@ -138,16 +173,21 @@ struct TeamEditorView: View {
     @State private var newRole: PlayerRole = .bat
     @State private var didConfirm = false
     @FocusState private var focusedField: Field?
-    @Query(sort: \RegisteredPlayer.createdAt, order: .reverse) private var registeredPlayers: [RegisteredPlayer]
-    @Query private var allTeams: [SavedTeam]
 
-    private enum Field: Hashable { case teamName }
+    // Directory search (Supabase profiles of everyone who created an account).
+    @State private var searchText = ""
+    @State private var searchResults: [DirectoryPlayer] = []
+    @State private var isSearching = false
+    @State private var searchError: String?
 
-    // Registered players available to add: a player already on any team (this one
-    // or another) can't be added again, so they're excluded here. Matched by full name.
-    private var availablePlayers: [RegisteredPlayer] {
-        let assigned = Set(allTeams.flatMap { $0.players.map(\.name) })
-        return registeredPlayers.filter { !assigned.contains($0.fullName) }
+    private enum Field: Hashable { case teamName, search }
+
+    // Search hits, minus anyone already on THIS team (matched by display name).
+    // We only exclude members of the current team — a player can belong to several
+    // teams, so people added to other teams must still appear here.
+    private var filteredResults: [DirectoryPlayer] {
+        let assigned = Set(team.players.map(\.name))
+        return searchResults.filter { !$0.displayName.isEmpty && !assigned.contains($0.displayName) }
     }
 
     var body: some View {
@@ -157,6 +197,7 @@ struct TeamEditorView: View {
                     CricketCard {
                         HStack {
                             TextField("Team name", text: $team.name)
+                                .autocorrectionDisabled()
                                 .font(.system(size: 20, weight: .bold)).foregroundColor(Theme.green)
                                 .focused($focusedField, equals: .teamName)
                             Spacer()
@@ -189,11 +230,38 @@ struct TeamEditorView: View {
                                     }
                                 }
                             }
-                            if availablePlayers.isEmpty {
-                                Text(registeredPlayers.isEmpty
-                                     ? "No registered players yet. Register players on the Players tab first."
-                                     : "All registered players are already assigned to a team.")
+                            // Search the player directory by name or phone number.
+                            HStack(spacing: 8) {
+                                Image(systemName: "magnifyingglass")
+                                    .font(.system(size: 14)).foregroundColor(Theme.text3)
+                                TextField("Search players by name or phone", text: $searchText)
+                                    .font(.system(size: 14)).foregroundColor(Theme.text)
+                                    .autocorrectionDisabled()
+                                    .textInputAutocapitalization(.never)
+                                    .focused($focusedField, equals: .search)
+                                if isSearching {
+                                    ProgressView().scaleEffect(0.7)
+                                } else if !searchText.isEmpty {
+                                    Button { searchText = ""; searchResults = [] } label: {
+                                        Image(systemName: "xmark.circle.fill")
+                                            .font(.system(size: 14)).foregroundColor(Theme.text3)
+                                    }
+                                }
+                            }
+                            .padding(.horizontal, 12).padding(.vertical, 10)
+                            .background(Theme.surface2).cornerRadius(10)
+                            .overlay(RoundedRectangle(cornerRadius: 10)
+                                .stroke(focusedField == .search ? Theme.green : Theme.border,
+                                        lineWidth: focusedField == .search ? 2 : 1))
+
+                            if searchText.trimmingCharacters(in: .whitespaces).isEmpty {
+                                Text("Search the player directory to add members to your team.")
                                     .font(.system(size: 12)).foregroundColor(Theme.text3)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(.top, 2)
+                            } else if filteredResults.isEmpty && !isSearching {
+                                Text(searchError.map { "Search failed: \($0)" } ?? "No players found for “\(searchText)”.")
+                                    .font(.system(size: 12)).foregroundColor(searchError == nil ? Theme.text3 : Theme.red)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(.top, 2)
                             } else {
@@ -201,12 +269,18 @@ struct TeamEditorView: View {
                                     .font(.system(size: 11)).foregroundColor(Theme.text3)
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 VStack(spacing: 6) {
-                                    ForEach(availablePlayers) { rp in
-                                        Button { addPlayer(rp) } label: {
+                                    ForEach(filteredResults) { dp in
+                                        Button { addPlayer(named: dp.displayName, phone: dp.phone) } label: {
                                             HStack(spacing: 10) {
-                                                RegisteredAvatar(player: rp, size: 34)
-                                                Text(rp.fullName.isEmpty ? "Unnamed Player" : rp.fullName)
-                                                    .font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.text)
+                                                PlayerAvatar(name: dp.displayName, role: newRole)
+                                                VStack(alignment: .leading, spacing: 2) {
+                                                    Text(dp.displayName)
+                                                        .font(.system(size: 14, weight: .semibold)).foregroundColor(Theme.text)
+                                                    if !dp.phone.isEmpty {
+                                                        Text(dp.phone)
+                                                            .font(.system(size: 11)).foregroundColor(Theme.text3)
+                                                    }
+                                                }
                                                 Spacer()
                                                 Text("+ Add").font(.system(size: 12, weight: .bold)).tracking(1)
                                                     .foregroundColor(Color(hex: "#0a0e1a"))
@@ -244,6 +318,14 @@ struct TeamEditorView: View {
             .background(Theme.bg.ignoresSafeArea())
             .navigationTitle(isNewTeam ? "New Team" : "Edit Team")
             .navigationBarTitleDisplayMode(.inline)
+            .task(id: searchText) { await runSearch() }
+            .task {
+                // For a brand-new team, focus the name field on appear so the
+                // keyboard is up and the user can type the name right away.
+                guard isNewTeam else { return }
+                try? await Task.sleep(for: .milliseconds(350))
+                focusedField = .teamName
+            }
             .toolbar {
                 if isNewTeam {
                     ToolbarItem(placement: .cancellationAction) {
@@ -270,12 +352,75 @@ struct TeamEditorView: View {
         }
     }
 
-    private func addPlayer(_ registered: RegisteredPlayer) {
-        let name = registered.fullName.trimmingCharacters(in: .whitespaces)
-        guard !name.isEmpty else { return }
-        let player = SavedPlayer(name: name, role: newRole, order: team.players.count)
+    private func addPlayer(named name: String, phone: String = "") {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let player = SavedPlayer(name: trimmed, role: newRole, order: team.players.count,
+                                 phone: CompletedMatch.normalizePhone(phone))
         player.team = team
         context.insert(player)
+        searchText = ""
+        searchResults = []
+    }
+
+    // Debounced directory search (runs whenever searchText changes).
+    private func runSearch() async {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else {
+            searchResults = []
+            isSearching = false
+            return
+        }
+        isSearching = true
+        searchError = nil
+        try? await Task.sleep(for: .milliseconds(300))   // debounce
+        if Task.isCancelled { return }
+        do {
+            let results = try await searchDirectory(query)
+            if Task.isCancelled { return }
+            searchResults = results
+        } catch {
+            if Task.isCancelled { return }
+            searchResults = []
+            searchError = error.localizedDescription
+            #if DEBUG
+            print("[Directory] search error: \(error)")
+            #endif
+        }
+        isSearching = false
+    }
+
+    // Looks players up in the Supabase `profiles` directory by name, phone or email.
+    private func searchDirectory(_ query: String) async throws -> [DirectoryPlayer] {
+        let pattern = "%\(query)%"
+        return try await SupabaseManager.shared.client
+            .from("profiles")
+            .select("id,first_name,last_name,phone,email")
+            .or("first_name.ilike.\(pattern),last_name.ilike.\(pattern),phone.ilike.\(pattern),email.ilike.\(pattern)")
+            .limit(25)
+            .execute()
+            .value
+    }
+}
+
+// A player found in the Supabase directory (the profiles of registered accounts).
+struct DirectoryPlayer: Identifiable, Codable, Sendable {
+    let id: String
+    let first_name: String
+    let last_name: String
+    let phone: String
+    let email: String
+
+    var fullName: String {
+        "\(first_name) \(last_name)".trimmingCharacters(in: .whitespaces)
+    }
+
+    // The name to show/add. Falls back to the email's local part for accounts
+    // that registered but haven't set a name in their profile yet.
+    var displayName: String {
+        let name = fullName
+        if !name.isEmpty { return name }
+        return email.split(separator: "@").first.map(String.init) ?? email
     }
 }
 
@@ -940,7 +1085,7 @@ struct PlayerRegistrationView: View {
                 .keyboardType(keyboard)
                 .textContentType(nil)
                 .textInputAutocapitalization(keyboard == .emailAddress ? .never : .words)
-                .autocorrectionDisabled(keyboard == .emailAddress)
+                .autocorrectionDisabled()
                 .focused($focusedField, equals: field)
                 .submitLabel(.next)
                 .onSubmit { advanceFocus(from: field) }
@@ -1051,6 +1196,8 @@ struct BulkPlayerRegistrationView: View {
                                 .autocorrectionDisabled()
                         }
                         .padding(12)
+                        .overlay(RoundedRectangle(cornerRadius: 12)
+                            .stroke(editorFocused ? Theme.green : Color.clear, lineWidth: 2))
                     }
 
                     // Live summary of what will be added.
@@ -1182,10 +1329,8 @@ struct CaloriesView: View {
     private var todayEntries: [CalorieEntry] { myEntries.filter { calendar.isDateInToday($0.date) } }
     private var todayTotal: Int { todayEntries.reduce(0) { $0 + $1.total } }
 
-    // The pie shows today's split when the user played today, otherwise the
-    // last-30-days split so the chart is still meaningful on rest days.
-    private var pieUsesToday: Bool { !todayEntries.isEmpty }
-    private var pieSource: [CalorieEntry] { pieUsesToday ? todayEntries : myEntries }
+    // The pie always shows today's batting/bowling/fielding split.
+    private var pieSource: [CalorieEntry] { todayEntries }
     private var pieBatting: Double { pieSource.reduce(0) { $0 + $1.battingCalories } }
     private var pieBowling: Double { pieSource.reduce(0) { $0 + $1.bowlingCalories } }
     private var pieFielding: Double { pieSource.reduce(0) { $0 + $1.fieldingCalories } }
@@ -1212,7 +1357,7 @@ struct CaloriesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: "Calories", subtitle: "Your energy burned · last 30 days")
+            PageHeader(title: "Your energy burned during game activity", subtitle: "Last 30 days")
                 .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 8)
 
             if myEntries.isEmpty {
@@ -1221,7 +1366,7 @@ struct CaloriesView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
                         todayCard
-                        pieCard
+                        if !todayEntries.isEmpty { pieCard }
                         historyCard
                         disclaimer
                     }
@@ -1261,7 +1406,7 @@ struct CaloriesView: View {
     private var pieCard: some View {
         let total = Int((pieBatting + pieBowling + pieFielding).rounded())
         return CricketCard {
-            CardHeader(title: pieUsesToday ? "Today's Breakdown" : "Breakdown · Last 30 Days")
+            CardHeader(title: "Today's Breakdown")
             VStack(spacing: 16) {
                 ZStack {
                     Chart(segments) { seg in

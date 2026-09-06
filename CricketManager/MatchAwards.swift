@@ -290,6 +290,18 @@ extension ScoringViewModel {
         var isTie = false
         if case .tie = awards.winMargin { isTie = true }
 
+        // Full roster (both teams). Names drive the display; the digits-only
+        // phones drive cross-account visibility — every participant whose profile
+        // phone is in `phones` will see this match on their Home feed.
+        let everyone = i1.battingTeam.players + i1.bowlingTeam.players
+        let roster = Array(Set(everyone.map(\.name)))
+        let phones = Array(Set(everyone.map { CompletedMatch.normalizePhone($0.phone) }
+                                .filter { !$0.isEmpty }))
+
+        // The account recording the match owns the row; the sync engine only
+        // pushes matches this user owns (participant copies are pulled read-only).
+        let ownerID = (try? context.fetch(FetchDescriptor<UserProfile>()).first)?.userID ?? ""
+
         let record = CompletedMatch(
             firstBattingTeam: i1.battingTeam.name,
             firstRuns: i1.runs,
@@ -303,7 +315,11 @@ extension ScoringViewModel {
             resultText: awards.winMargin.display,
             totalOvers: match.totalOvers,
             manOfTheMatch: awards.manOfTheMatch.player.name,
-            isTie: isTie
+            isTie: isTie,
+            playerNames: roster,
+            playerPhones: phones,
+            ownerID: ownerID,
+            scorecardJSON: match.scorecardSnapshot().encoded() ?? ""
         )
         context.insert(record)
         try? context.save()

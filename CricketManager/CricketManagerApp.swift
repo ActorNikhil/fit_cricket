@@ -4,11 +4,13 @@ import SwiftData
 @main
 struct CricketManagerApp: App {
     @StateObject private var appVM = AppViewModel()
+    @State private var auth = AuthModel()
     @AppStorage(themeModeStorageKey) private var themeMode: ThemeMode = .dark
     var body: some Scene {
         WindowGroup {
             RootAuthGate()
                 .environmentObject(appVM)
+                .environment(auth)
                 .preferredColorScheme(themeMode.colorScheme)
                 .buttonStyle(FeedbackButtonStyle())
         }
@@ -18,7 +20,12 @@ struct CricketManagerApp: App {
 
 struct RootView: View {
     @EnvironmentObject var appVM: AppViewModel
+    @Environment(AuthModel.self) private var auth
+    @Environment(\.modelContext) private var context
+    @Environment(\.scenePhase) private var scenePhase
+    @Query private var profiles: [UserProfile]
     @State private var showSplash = true
+    @State private var sync: SyncEngine?
     var body: some View {
         ZStack {
             Theme.bg.ignoresSafeArea()
@@ -54,6 +61,108 @@ struct RootView: View {
             try? await Task.sleep(for: .seconds(1.6))
             withAnimation(.easeInOut(duration: 0.45)) { showSplash = false }
         }
+        .task {
+            // Always land on the Home tab right after signing in, regardless of
+            // which tab was last selected in a previous session.
+            appVM.selectedTab = 0
+            ensureProfile()
+            startSync()
+        }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .active { sync?.requestSync() }
+        }
+        // An on-demand sync requested by a screen (e.g. a match just finished, or a
+        // live match a participant was watching ended) — run it right away.
+        .onChange(of: appVM.syncRequestToken) { _, _ in sync?.requestSync() }
+    }
+
+    // Make sure the local store belongs to the signed-in account. If a *different*
+    // account signs in on this device, the previous user's profile details are
+    // reset and their synced data is wiped so nothing leaks into the new account
+    // (the new account's cloud data is then pulled by the sync engine). A legacy
+    // profile with no owner is claimed for this account, keeping its data unless
+    // the email clearly belongs to someone else.
+    private func ensureProfile() {
+        let uid = auth.userID?.uuidString ?? ""
+        let acctEmail = auth.email ?? ""
+        #if DEBUG
+        print("[ensureProfile] uid=\(uid) email=\(acctEmail) existingCount=\(profiles.count) pending=\(auth.pendingSignUp != nil)")
+        #endif
+
+        guard let existing = profiles.first else {
+            #if DEBUG
+            print("[ensureProfile] CREATE branch")
+            #endif
+            let profile = UserProfile(phone: "")
+            profile.userID = uid
+            profile.email = acctEmail
+            seedFromSignUp(profile)
+            context.insert(profile)
+            try? context.save()
+            return
+        }
+
+        #if DEBUG
+        print("[ensureProfile] existing.userID=\(existing.userID) -> CLAIM branch")
+        #endif
+        if existing.userID == uid { return }   // same account — nothing to do
+
+        let differentPerson = !existing.email.isEmpty
+            && existing.email.lowercased() != acctEmail.lowercased()
+
+        // Switching away from a known different account → wipe its local data.
+        if !existing.userID.isEmpty && existing.userID != uid {
+            wipeSyncedData()
+            SyncEngine.clearSyncCursors()
+        }
+
+        // Reset stale profile details when this profile isn't this user's.
+        if !existing.userID.isEmpty || differentPerson {
+            existing.firstName = ""
+            existing.lastName = ""
+            existing.phone = ""
+            existing.photoData = nil
+        }
+        existing.userID = uid
+        existing.email = acctEmail
+        seedFromSignUp(existing)
+        try? context.save()
+    }
+
+    // Copy the name/phone/role entered at sign-up into the local profile (the
+    // offline-first source of truth). Consumed once; the sync engine pushes it
+    // to Supabase afterwards.
+    private func seedFromSignUp(_ profile: UserProfile) {
+        guard let pending = auth.consumePendingSignUp() else {
+            #if DEBUG
+            print("[seedFromSignUp] no pending details — skipped")
+            #endif
+            return
+        }
+        #if DEBUG
+        print("[seedFromSignUp] seeding \(pending.firstName) \(pending.lastName) phone=\(pending.phone)")
+        #endif
+        profile.firstName = pending.firstName
+        profile.lastName = pending.lastName
+        profile.phone = pending.phone
+        profile.role = pending.role
+    }
+
+    // Removes the previous account's synced entities for a clean slate.
+    private func wipeSyncedData() {
+        try? context.delete(model: SavedPlayer.self)
+        try? context.delete(model: SavedTeam.self)
+        try? context.delete(model: CalorieEntry.self)
+        try? context.delete(model: CompletedMatch.self)
+        try? context.delete(model: RegisteredPlayer.self)
+        try? context.save()
+    }
+
+    // Start cloud sync for the signed-in user (creates the engine on first use).
+    private func startSync() {
+        guard let userID = auth.userID else { return }
+        if sync == nil { sync = SyncEngine(context: context) }
+        sync?.start(userID: userID)
     }
 }
 
@@ -65,12 +174,12 @@ struct SplashView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(hex: "#125036"), Color(hex: "#0c3122"), Color(hex: "#06120d")],
+                colors: [Color(hex: "#1e3a8a"), Color(hex: "#0c2461"), Color(hex: "#060d1a")],
                 startPoint: .topLeading, endPoint: .bottomTrailing
             ).ignoresSafeArea()
 
             RadialGradient(
-                colors: [Theme.gold.opacity(0.16), .clear],
+                colors: [Color(hex: "#3b82f6").opacity(0.22), .clear],
                 center: .center, startRadius: 0, endRadius: 320
             ).ignoresSafeArea()
 
@@ -137,7 +246,7 @@ struct CustomTabBar: View {
 // slides the selected screen in with a Back control.
 struct MoreView: View {
     @State private var selection: MoreDestination? = nil
-    @AppStorage(loggedInPhoneStorageKey) private var loggedInPhone = ""
+    @Environment(AuthModel.self) private var auth
 
     var body: some View {
         Group {
@@ -201,9 +310,9 @@ struct MoreView: View {
                     }
                 }
 
-                // Log Out returns to the login gate (the profile itself is kept,
-                // so signing back in restores it).
-                Button(role: .destructive) { loggedInPhone = "" } label: {
+                // Log Out ends the Supabase session and returns to the login
+                // gate. Local data is kept and re-syncs when signing back in.
+                Button(role: .destructive) { Task { await auth.signOut() } } label: {
                     HStack(spacing: 8) {
                         Image(systemName: "rectangle.portrait.and.arrow.right")
                         Text("Log Out").font(.system(size: 15, weight: .bold)).tracking(1)
@@ -222,34 +331,34 @@ struct MoreView: View {
     @ViewBuilder
     private func destinationView(for item: MoreDestination) -> some View {
         switch item {
+        case .profile:  ProfileView()
         case .teams:    TeamsView()
         case .stats:    LeaderboardView()
         case .history:  MatchHistoryView()
-        case .players:  PlayersView()
         case .settings: SettingsView()
         }
     }
 }
 
 enum MoreDestination: CaseIterable, Hashable {
-    case teams, stats, history, players, settings
+    case profile, teams, stats, history, settings
 
     var title: String {
         switch self {
+        case .profile:  return "Profile"
         case .teams:    return "Teams"
         case .stats:    return "Stats"
         case .history:  return "History"
-        case .players:  return "Players"
         case .settings: return "Settings"
         }
     }
 
     var icon: String {
         switch self {
+        case .profile:  return "person.crop.circle.fill"
         case .teams:    return "person.2.fill"
         case .stats:    return "trophy.fill"
         case .history:  return "flag.checkered"
-        case .players:  return "person.crop.rectangle.stack.fill"
         case .settings: return "gearshape.fill"
         }
     }

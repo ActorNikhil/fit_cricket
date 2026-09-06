@@ -1,4 +1,5 @@
 import SwiftUI
+import SwiftData
 import Combine
 
 @MainActor
@@ -41,10 +42,65 @@ class ScoringViewModel: ObservableObject {
 
     var innings: Innings { match.activeInnings }
 
+    // Mirrors this match to Supabase so participants can follow it live. Nil until
+    // startLiveBroadcast(context:) attaches it (skipped when signed out).
+    private var live: LiveMatchService?
+    private var liveOwnerID = ""
+    private var liveNames: [String] = []
+    private var livePhones: [String] = []
+
     init(match: Match) {
         self.match = match
         observeModel()
         promptForOpeningBowler()
+    }
+
+    // MARK: - Live broadcast
+
+    /// Begin mirroring this match to the `live_matches` table. Needs the signed-in
+    /// profile (for the owner id) and the full roster (names/phones drive who can
+    /// see the live card). No-ops if there's no signed-in profile.
+    func startLiveBroadcast(context: ModelContext) {
+        guard live == nil else { return }
+        let ownerID = (try? context.fetch(FetchDescriptor<UserProfile>()).first)?.userID ?? ""
+        guard !ownerID.isEmpty else { return }
+        let everyone = match.innings1.battingTeam.players + match.innings1.bowlingTeam.players
+        liveOwnerID = ownerID
+        liveNames = Array(Set(everyone.map(\.name)))
+        livePhones = Array(Set(everyone.map { CompletedMatch.normalizePhone($0.phone) }.filter { !$0.isEmpty }))
+        live = LiveMatchService(id: match.liveID)
+        broadcastLive()
+    }
+
+    /// Push the current scorecard snapshot (called after every scoring event).
+    func broadcastLive() {
+        guard live != nil else { return }
+        let i1 = match.innings1
+        let i2 = match.innings2
+        let row = LiveMatchRow(
+            id: match.liveID.uuidString,
+            user_id: liveOwnerID,
+            updated_at: LiveMatchDate.now(),
+            first_batting_team: match.battingFirst.name,
+            first_runs: i1.runs, first_wickets: i1.wickets, first_overs: i1.oversDisplay,
+            // The side batting second is known from the toss, so send it even during
+            // the first innings so the card title reads "A vs B" throughout.
+            second_batting_team: match.fieldingFirst.name,
+            second_runs: i2?.runs ?? 0, second_wickets: i2?.wickets ?? 0,
+            second_overs: i2?.oversDisplay ?? "",
+            current_innings: match.currentInnings,
+            total_overs: match.totalOvers,
+            target: match.target,
+            batting_team: match.activeInnings.battingTeam.name,
+            player_names: liveNames,
+            player_phones: livePhones,
+            scorecard: match.scorecardSnapshot().encoded())
+        live?.publish(row)
+    }
+
+    /// Remove the live row (match over or scoring screen dismissed). Idempotent.
+    func endLiveBroadcast() {
+        live?.end()
     }
 
     /// Re-subscribes so changes to the Match and its Innings objects invalidate this VM.
@@ -64,6 +120,7 @@ class ScoringViewModel: ObservableObject {
         saveSnapshot()
         applyEvent(event, to: innings)
         checkInningsComplete()
+        broadcastLive()
     }
 
     private func applyEvent(_ event: BallEvent, to inn: Innings) {
@@ -158,6 +215,7 @@ class ScoringViewModel: ObservableObject {
     func undoLastBall() {
         guard let snap = undoStack.popLast() else { return }
         restoreSnapshot(snap)
+        broadcastLive()
     }
 
     var canUndo: Bool { !undoStack.isEmpty }
@@ -245,6 +303,10 @@ class ScoringViewModel: ObservableObject {
     }
 
     private func promptForOpeningBowler() {
+        // Only prompt when the innings has no bowler yet (fresh match / start of a
+        // new innings). When resuming a match already underway the VM is recreated
+        // but a bowler is already set, so don't pop the picker over live scoring.
+        guard innings.bowlerStats.isEmpty else { return }
         Task { @MainActor in
             try? await Task.sleep(nanoseconds: 500_000_000)
             self.showChangeBowlerSheet = true
@@ -277,6 +339,7 @@ class ScoringViewModel: ObservableObject {
         showStartInnings2 = false
         undoStack = []
         promptForOpeningBowler()
+        broadcastLive()
     }
 
     private func computeResult() {
@@ -290,6 +353,9 @@ class ScoringViewModel: ObservableObject {
             match.result = "\(match.innings1.battingTeam.name) won by \(diff) run\(diff == 1 ? "" : "s")!"
         }
         match.isMatchOver = true
+        // The match is done — drop the live row. Participants will pick it up as a
+        // finished CompletedMatch via the sync engine instead.
+        endLiveBroadcast()
     }
 
     // MARK: - Helpers
