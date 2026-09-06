@@ -15,6 +15,7 @@
 		16FB029530327BD8001FC555 /* AuthModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB029430327BD8001FC555 /* AuthModel.swift */; };
 		16FB02983032B233001FC555 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 16FB02973032B233001FC555 /* Supabase */; };
 		16FB029A3032B53E001FC555 /* SyncEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB02993032B53E001FC555 /* SyncEngine.swift */; };
+		16FB029C303B7844001FC555 /* LiveMatch.swift in Sources */ = {isa = PBXBuildFile; fileRef = 16FB029B303B7844001FC555 /* LiveMatch.swift */; };
 		AA000001 /* CricketManagerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000001 /* CricketManagerApp.swift */; };
 		AA000002 /* Models.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000002 /* Models.swift */; };
 		AA000003 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF000003 /* Theme.swift */; };
@@ -37,6 +38,7 @@
 		16FB029230327BCF001FC555 /* SupabaseManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseManager.swift; sourceTree = "<group>"; };
 		16FB029430327BD8001FC555 /* AuthModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthModel.swift; sourceTree = "<group>"; };
 		16FB02993032B53E001FC555 /* SyncEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SyncEngine.swift; sourceTree = "<group>"; };
+		16FB029B303B7844001FC555 /* LiveMatch.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LiveMatch.swift; sourceTree = "<group>"; };
 		AF000000 /* CricketManager.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CricketManager.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AF000001 /* CricketManagerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CricketManagerApp.swift; sourceTree = "<group>"; };
 		AF000002 /* Models.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Models.swift; sourceTree = "<group>"; };
@@ -104,6 +106,7 @@
 				16FB029230327BCF001FC555 /* SupabaseManager.swift */,
 				16FB029430327BD8001FC555 /* AuthModel.swift */,
 				16FB02993032B53E001FC555 /* SyncEngine.swift */,
+				16FB029B303B7844001FC555 /* LiveMatch.swift */,
 			);
 			path = CricketManager;
 			sourceTree = "<group>";
@@ -201,6 +204,7 @@
 				AA000008 /* ScoringView.swift in Sources */,
 				16FB029530327BD8001FC555 /* AuthModel.swift in Sources */,
 				AA000009 /* ScoringSheets.swift in Sources */,
+				16FB029C303B7844001FC555 /* LiveMatch.swift in Sources */,
 				16FB0284301FC1F6001FC555 /* SettingsView.swift in Sources */,
 				16FB0290302D5C4A001FC555 /* ProfileAndAuth.swift in Sources */,
 				AA000013 /* MatchAwards.swift in Sources */,
@@ -226,13 +230,15 @@
 				INFOPLIST_FILE = CricketManager/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.cricket.dallascricket;
+				PRODUCT_BUNDLE_IDENTIFIER = com.challagulla.fitcricket;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Debug;
 		};
@@ -250,13 +256,15 @@
 				INFOPLIST_FILE = CricketManager/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				MARKETING_VERSION = 1.0;
-				PRODUCT_BUNDLE_IDENTIFIER = com.cricket.dallascricket;
+				PRODUCT_BUNDLE_IDENTIFIER = com.challagulla.fitcricket;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_STRICT_CONCURRENCY = complete;
 				SWIFT_VERSION = 5.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
+				TARGETED_DEVICE_FAMILY = 1;
 			};
 			name = Release;
 		};
@@ -338,6 +346,8 @@
 				kind = upToNextMajorVersion;
 				minimumVersion = 2.5.1;
 			};
+			traits = (
+			);
 		};
 /* End XCRemoteSwiftPackageReference section */
 

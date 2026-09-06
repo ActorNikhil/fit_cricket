@@ -59,16 +59,25 @@ final class SyncEngine {
         guard let userID, !isSyncing else { return }
         isSyncing = true
         defer { isSyncing = false }
+        // Each table is synced independently: a failure in one (e.g. a missing
+        // column) is logged and skipped so it can't starve the others.
+        await step("profile")           { try await self.syncProfile(userID) }
+        await step("saved_teams")       { try await self.syncSavedTeams(userID) }
+        await step("saved_players")     { try await self.syncSavedPlayers(userID) }
+        await step("member_teams")      { try await self.syncMemberTeams(userID) }
+        await step("calorie_entries")   { try await self.syncCalorieEntries(userID) }
+        await step("completed_matches") { try await self.syncCompletedMatches(userID) }
+        await step("participant_matches") { try await self.syncParticipantMatches(userID) }
+        await step("registered_players") { try await self.syncRegisteredPlayers(userID) }
+    }
+
+    /// Runs one sync step, isolating its failure so the rest of the cycle still runs.
+    private func step(_ name: String, _ body: () async throws -> Void) async {
         do {
-            try await syncProfile(userID)
-            try await syncSavedTeams(userID)
-            try await syncSavedPlayers(userID)
-            try await syncCalorieEntries(userID)
-            try await syncCompletedMatches(userID)
-            try await syncRegisteredPlayers(userID)
+            try await body()
         } catch {
             #if DEBUG
-            print("[Sync] error: \(error)")
+            print("[Sync] \(name) error: \(error)")
             #endif
         }
     }
@@ -112,8 +121,14 @@ final class SyncEngine {
             _ = try await client.from(table).upsert(toPush).execute()
         }
 
-        // Pull remote creates/updates into SwiftData.
-        for (id, row) in remoteRows where !localDeleted.contains(id) && !remoteDeleted.contains(id) {
+        // Pull remote creates into SwiftData. Rows that also exist locally were
+        // just pushed above (local wins under last-writer-wins), so we must NOT
+        // re-apply the pre-push `remoteRows` snapshot over them — doing so writes a
+        // stale value back onto local, which makes local and server swap values
+        // every cycle and oscillate forever. Only apply rows the server has that we
+        // don't (genuine creates from another device).
+        for (id, row) in remoteRows
+        where !localDeleted.contains(id) && !remoteDeleted.contains(id) && !localIDs.contains(id) {
             applyLocal(row)
         }
 
@@ -157,8 +172,11 @@ final class SyncEngine {
     private func syncSavedTeams(_ userID: UUID) async throws {
         let teams = try context.fetch(FetchDescriptor<SavedTeam>())
         var byID = Dictionary(teams.map { ($0.remoteID, $0) }, uniquingKeysWith: { a, _ in a })
+        // Only teams this account owns take part in push/delete; teams pulled
+        // read-only because the user is a member (non-empty foreign ownerID) are
+        // excluded so we never re-upload them under our own user id.
         var local: [UUID: SyncTeamRow] = [:]
-        for t in teams {
+        for t in teams where t.ownerID.isEmpty || t.ownerID == userID.uuidString {
             local[t.remoteID] = SyncTeamRow(id: t.remoteID.uuidString, user_id: userID.uuidString,
                                         name: t.name, created_at: ISO.string(t.createdAt))
         }
@@ -189,11 +207,13 @@ final class SyncEngine {
         let teams = try context.fetch(FetchDescriptor<SavedTeam>())
         let teamByRemote = Dictionary(teams.map { ($0.remoteID, $0) }, uniquingKeysWith: { a, _ in a })
         var byID = Dictionary(players.map { ($0.remoteID, $0) }, uniquingKeysWith: { a, _ in a })
+        // Only players this account owns are pushed; players of teams the user is
+        // merely a member of (foreign ownerID) are read-only.
         var local: [UUID: SyncPlayerRow] = [:]
-        for p in players {
+        for p in players where p.ownerID.isEmpty || p.ownerID == userID.uuidString {
             local[p.remoteID] = SyncPlayerRow(id: p.remoteID.uuidString, user_id: userID.uuidString,
                                           team_id: p.team?.remoteID.uuidString, name: p.name,
-                                          role: p.role.rawValue, sort_order: p.order)
+                                          role: p.role.rawValue, sort_order: p.order, phone: p.phone)
         }
         try await reconcile(
             table: "saved_players", userID: userID, localRows: local,
@@ -205,10 +225,11 @@ final class SyncEngine {
                     existing.name = row.name
                     existing.role = PlayerRole(rawValue: row.role) ?? .bat
                     existing.order = row.sort_order
+                    existing.phone = row.phone ?? ""
                     existing.team = team
                 } else {
                     let p = SavedPlayer(name: row.name, role: PlayerRole(rawValue: row.role) ?? .bat,
-                                        order: row.sort_order)
+                                        order: row.sort_order, phone: row.phone ?? "")
                     p.remoteID = rid
                     p.team = team
                     self.context.insert(p)
@@ -219,6 +240,110 @@ final class SyncEngine {
                 if let p = byID[rid] { self.context.delete(p); byID[rid] = nil }
             }
         )
+    }
+
+    // MARK: Member teams (read-only)
+    // Pulls teams the user did not create but is a *member* of — their profile
+    // phone matches a player's phone on the team. These teams (and their players)
+    // appear under More → Teams. They're inserted read-only: never pushed or
+    // deleted by the owner reconcile (guarded by ownerID). An RLS policy on
+    // `saved_teams`/`saved_players` must let a member SELECT them.
+    private func syncMemberTeams(_ userID: UUID) async throws {
+        guard let profile = try context.fetch(FetchDescriptor<UserProfile>()).first else {
+            #if DEBUG
+            print("[MemberTeams] no local profile — skipping")
+            #endif
+            return
+        }
+        let myPhone = CompletedMatch.normalizePhone(profile.phone)
+        #if DEBUG
+        print("[MemberTeams] running for user=\(userID.uuidString) phone='\(myPhone)'")
+        #endif
+        guard !myPhone.isEmpty else {
+            #if DEBUG
+            print("[MemberTeams] local phone empty — skipping")
+            #endif
+            return
+        }
+
+        // Teams owned by others. RLS narrows this to teams the user is a member of.
+        let teamRows: [SyncTeamRow] = try await client.from("saved_teams")
+            .select().neq("user_id", value: userID.uuidString).execute().value
+        #if DEBUG
+        print("[MemberTeams] query returned \(teamRows.count) team(s): \(teamRows.map(\.name))")
+        #endif
+        // Compare as UUIDs, not strings: Postgres returns lowercase ids while
+        // Swift's UUID.uuidString is uppercase, so string comparison never matches
+        // and the cleanup below would delete the team it just inserted.
+        let memberTeamIDs = Set(teamRows.compactMap { UUID(uuidString: $0.id) })
+
+        var teamByRemote = Dictionary(
+            try context.fetch(FetchDescriptor<SavedTeam>()).map { ($0.remoteID, $0) },
+            uniquingKeysWith: { a, _ in a })
+
+        for row in teamRows {
+            guard let rid = UUID(uuidString: row.id) else { continue }
+            if let t = teamByRemote[rid] {
+                t.name = row.name
+                t.ownerID = row.user_id
+            } else {
+                let t = SavedTeam(name: row.name, createdAt: ISO.date(row.created_at) ?? .now)
+                t.remoteID = rid
+                t.ownerID = row.user_id
+                context.insert(t)
+                teamByRemote[rid] = t
+            }
+        }
+
+        // Players belonging to those member teams.
+        let playerRows: [SyncPlayerRow] = try await client.from("saved_players")
+            .select().neq("user_id", value: userID.uuidString).execute().value
+        var playerByRemote = Dictionary(
+            try context.fetch(FetchDescriptor<SavedPlayer>()).map { ($0.remoteID, $0) },
+            uniquingKeysWith: { a, _ in a })
+
+        for row in playerRows {
+            guard let rid = UUID(uuidString: row.id),
+                  let tid = row.team_id.flatMap({ UUID(uuidString: $0) }),
+                  memberTeamIDs.contains(tid) else { continue }
+            let team = teamByRemote[tid]
+            if let p = playerByRemote[rid] {
+                p.name = row.name
+                p.role = PlayerRole(rawValue: row.role) ?? .bat
+                p.order = row.sort_order
+                p.phone = row.phone ?? ""
+                p.ownerID = row.user_id
+                p.team = team
+            } else {
+                let p = SavedPlayer(name: row.name, role: PlayerRole(rawValue: row.role) ?? .bat,
+                                    order: row.sort_order, phone: row.phone ?? "")
+                p.remoteID = rid
+                p.ownerID = row.user_id
+                p.team = team
+                context.insert(p)
+                playerByRemote[rid] = p
+            }
+        }
+
+        // Drop member teams the user can no longer see (owner deleted them or
+        // removed the user from the roster). Cascade delete removes their players.
+        let localMemberTeams = try context.fetch(FetchDescriptor<SavedTeam>())
+            .filter { !$0.ownerID.isEmpty && $0.ownerID != userID.uuidString }
+        for t in localMemberTeams where !memberTeamIDs.contains(t.remoteID) {
+            context.delete(t)
+        }
+
+        do {
+            try context.save()
+            #if DEBUG
+            let total = (try? context.fetch(FetchDescriptor<SavedTeam>()).count) ?? -1
+            print("[MemberTeams] saved OK — local SavedTeam count now \(total)")
+            #endif
+        } catch {
+            #if DEBUG
+            print("[MemberTeams] SAVE FAILED: \(error)")
+            #endif
+        }
     }
 
     // MARK: Calorie entries
@@ -266,8 +391,13 @@ final class SyncEngine {
     private func syncCompletedMatches(_ userID: UUID) async throws {
         let matches = try context.fetch(FetchDescriptor<CompletedMatch>())
         var byID = Dictionary(matches.map { ($0.remoteID, $0) }, uniquingKeysWith: { a, _ in a })
+
+        // Only matches THIS account recorded participate in the owner reconcile
+        // (push/delete). Matches merely participated in — pulled read-only by
+        // `syncParticipantMatches` and stamped with someone else's ownerID — are
+        // excluded here, so we never re-upload them under our own user id.
         var local: [UUID: SyncMatchRow] = [:]
-        for m in matches {
+        for m in matches where m.ownerID.isEmpty || m.ownerID == userID.uuidString {
             local[m.remoteID] = SyncMatchRow(
                 id: m.remoteID.uuidString, user_id: userID.uuidString, date: ISO.string(m.date),
                 first_batting_team: m.firstBattingTeam, first_runs: m.firstRuns,
@@ -275,7 +405,9 @@ final class SyncEngine {
                 second_batting_team: m.secondBattingTeam, second_runs: m.secondRuns,
                 second_wickets: m.secondWickets, second_overs: m.secondOvers,
                 winner_name: m.winnerName, result_text: m.resultText,
-                total_overs: m.totalOvers, man_of_the_match: m.manOfTheMatch, is_tie: m.isTie)
+                total_overs: m.totalOvers, man_of_the_match: m.manOfTheMatch, is_tie: m.isTie,
+                player_names: m.playerNames, player_phones: m.playerPhones,
+                scorecard: m.scorecardJSON.isEmpty ? nil : m.scorecardJSON)
         }
         try await reconcile(
             table: "completed_matches", userID: userID, localRows: local,
@@ -290,7 +422,9 @@ final class SyncEngine {
                     secondBattingTeam: row.second_batting_team, secondRuns: row.second_runs,
                     secondWickets: row.second_wickets, secondOvers: row.second_overs,
                     winnerName: row.winner_name, resultText: row.result_text,
-                    totalOvers: row.total_overs, manOfTheMatch: row.man_of_the_match, isTie: row.is_tie)
+                    totalOvers: row.total_overs, manOfTheMatch: row.man_of_the_match, isTie: row.is_tie,
+                    playerNames: row.player_names ?? [], playerPhones: row.player_phones ?? [],
+                    ownerID: userID.uuidString, scorecardJSON: row.scorecard ?? "")
                 m.remoteID = rid
                 self.context.insert(m)
                 byID[rid] = m
@@ -299,6 +433,46 @@ final class SyncEngine {
                 if let m = byID[rid] { self.context.delete(m); byID[rid] = nil }
             }
         )
+    }
+
+    // MARK: Participant matches (read-only)
+    // Pulls matches this user *played in* but did not record — identified by the
+    // signed-in profile's phone appearing in the row's `player_phones`. These are
+    // inserted locally and never pushed, deleted, or tracked in the sync cursor;
+    // an RLS policy on `completed_matches` must allow a participant to SELECT them.
+    private func syncParticipantMatches(_ userID: UUID) async throws {
+        guard let profile = try context.fetch(FetchDescriptor<UserProfile>()).first else { return }
+        let myPhone = CompletedMatch.normalizePhone(profile.phone)
+        guard !myPhone.isEmpty else { return }
+
+        let rows: [SyncMatchRow] = try await client.from("completed_matches")
+            .select()
+            .contains("player_phones", value: [myPhone])
+            .execute()
+            .value
+
+        let existing = try context.fetch(FetchDescriptor<CompletedMatch>())
+        var byID = Dictionary(existing.map { ($0.remoteID, $0) }, uniquingKeysWith: { a, _ in a })
+
+        for row in rows {
+            guard let rid = UUID(uuidString: row.id) else { continue }
+            if row.user_id == userID.uuidString { continue }  // my own — owner sync handles it
+            if byID[rid] != nil { continue }                  // already have it locally
+            let m = CompletedMatch(
+                date: ISO.date(row.date) ?? .now,
+                firstBattingTeam: row.first_batting_team, firstRuns: row.first_runs,
+                firstWickets: row.first_wickets, firstOvers: row.first_overs,
+                secondBattingTeam: row.second_batting_team, secondRuns: row.second_runs,
+                secondWickets: row.second_wickets, secondOvers: row.second_overs,
+                winnerName: row.winner_name, resultText: row.result_text,
+                totalOvers: row.total_overs, manOfTheMatch: row.man_of_the_match, isTie: row.is_tie,
+                playerNames: row.player_names ?? [], playerPhones: row.player_phones ?? [],
+                ownerID: row.user_id, scorecardJSON: row.scorecard ?? "")
+            m.remoteID = rid
+            context.insert(m)
+            byID[rid] = m
+        }
+        try? context.save()
     }
 
     // MARK: Registered players
@@ -388,6 +562,7 @@ private struct SyncPlayerRow: Codable, Sendable {
     var name: String
     var role: String
     var sort_order: Int
+    var phone: String?   // optional so rows written before the column existed still decode
 }
 
 private struct SyncCalorieRow: Codable, Sendable {
@@ -417,6 +592,10 @@ private struct SyncMatchRow: Codable, Sendable {
     var total_overs: Int
     var man_of_the_match: String
     var is_tie: Bool
+    // Optional so rows written before these columns existed still decode.
+    var player_names: [String]?
+    var player_phones: [String]?
+    var scorecard: String?
 }
 
 private struct SyncRegisteredRow: Codable, Sendable {

@@ -62,12 +62,18 @@ struct RootView: View {
             withAnimation(.easeInOut(duration: 0.45)) { showSplash = false }
         }
         .task {
+            // Always land on the Home tab right after signing in, regardless of
+            // which tab was last selected in a previous session.
+            appVM.selectedTab = 0
             ensureProfile()
             startSync()
         }
         .onChange(of: scenePhase) { _, phase in
             if phase == .active { sync?.requestSync() }
         }
+        // An on-demand sync requested by a screen (e.g. a match just finished, or a
+        // live match a participant was watching ended) — run it right away.
+        .onChange(of: appVM.syncRequestToken) { _, _ in sync?.requestSync() }
     }
 
     // Make sure the local store belongs to the signed-in account. If a *different*
@@ -79,16 +85,26 @@ struct RootView: View {
     private func ensureProfile() {
         let uid = auth.userID?.uuidString ?? ""
         let acctEmail = auth.email ?? ""
+        #if DEBUG
+        print("[ensureProfile] uid=\(uid) email=\(acctEmail) existingCount=\(profiles.count) pending=\(auth.pendingSignUp != nil)")
+        #endif
 
         guard let existing = profiles.first else {
+            #if DEBUG
+            print("[ensureProfile] CREATE branch")
+            #endif
             let profile = UserProfile(phone: "")
             profile.userID = uid
             profile.email = acctEmail
+            seedFromSignUp(profile)
             context.insert(profile)
             try? context.save()
             return
         }
 
+        #if DEBUG
+        print("[ensureProfile] existing.userID=\(existing.userID) -> CLAIM branch")
+        #endif
         if existing.userID == uid { return }   // same account — nothing to do
 
         let differentPerson = !existing.email.isEmpty
@@ -109,7 +125,27 @@ struct RootView: View {
         }
         existing.userID = uid
         existing.email = acctEmail
+        seedFromSignUp(existing)
         try? context.save()
+    }
+
+    // Copy the name/phone/role entered at sign-up into the local profile (the
+    // offline-first source of truth). Consumed once; the sync engine pushes it
+    // to Supabase afterwards.
+    private func seedFromSignUp(_ profile: UserProfile) {
+        guard let pending = auth.consumePendingSignUp() else {
+            #if DEBUG
+            print("[seedFromSignUp] no pending details — skipped")
+            #endif
+            return
+        }
+        #if DEBUG
+        print("[seedFromSignUp] seeding \(pending.firstName) \(pending.lastName) phone=\(pending.phone)")
+        #endif
+        profile.firstName = pending.firstName
+        profile.lastName = pending.lastName
+        profile.phone = pending.phone
+        profile.role = pending.role
     }
 
     // Removes the previous account's synced entities for a clean slate.
@@ -138,12 +174,12 @@ struct SplashView: View {
     var body: some View {
         ZStack {
             LinearGradient(
-                colors: [Color(hex: "#125036"), Color(hex: "#0c3122"), Color(hex: "#06120d")],
+                colors: [Color(hex: "#1e3a8a"), Color(hex: "#0c2461"), Color(hex: "#060d1a")],
                 startPoint: .topLeading, endPoint: .bottomTrailing
             ).ignoresSafeArea()
 
             RadialGradient(
-                colors: [Theme.gold.opacity(0.16), .clear],
+                colors: [Color(hex: "#3b82f6").opacity(0.22), .clear],
                 center: .center, startRadius: 0, endRadius: 320
             ).ignoresSafeArea()
 

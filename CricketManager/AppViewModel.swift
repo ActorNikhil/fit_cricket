@@ -9,6 +9,12 @@ class AppViewModel: ObservableObject {
     @Published var showMatchStarted: Bool = false
     @Published var activeMatch: Match? = nil
 
+    // Bumped to ask RootView (which owns the SyncEngine) to run a cloud sync now,
+    // instead of waiting for its periodic timer. Used e.g. when a match finishes
+    // (push the result promptly) or when a watched live match ends (pull it).
+    @Published var syncRequestToken: Int = 0
+    func requestSyncNow() { syncRequestToken &+= 1 }
+
     // Match slots — in-memory value snapshots loaded from the saved team library.
     // The durable store lives in SwiftData (SavedTeam); these are just the two
     // squads chosen for the current match setup.
@@ -64,6 +70,21 @@ class AppViewModel: ObservableObject {
 
     func resetMatch() {
         activeMatch = nil; tossWinner = nil; showMatchStarted = false; selectedOvers = nil
+    }
+
+    /// Leave the scoring screen but keep the match in memory. It stays as a
+    /// resumable LIVE card under "Matches of your interest" on Home so scoring can
+    /// be continued from where it left off (see resumeMatch()).
+    func minimizeMatch() {
+        selectedTab = 0
+        showMatchStarted = false
+    }
+
+    /// Re-present the scoring screen for the parked in-memory match. The Match
+    /// object retains all scoring state, so scoring resumes exactly where it left.
+    func resumeMatch() {
+        guard activeMatch != nil else { return }
+        showMatchStarted = true
     }
 
     func team(for side: TeamSide) -> CricketTeam { side == .a ? teamA : teamB }

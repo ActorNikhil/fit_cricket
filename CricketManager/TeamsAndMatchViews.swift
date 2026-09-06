@@ -8,9 +8,19 @@ import Charts
 struct TeamsView: View {
     @EnvironmentObject var appVM: AppViewModel
     @Environment(\.modelContext) private var context
+    @Environment(AuthModel.self) private var auth
     @Query(sort: \SavedTeam.createdAt, order: .reverse) private var teams: [SavedTeam]
     @State private var editingTeam: SavedTeam?
     @State private var editingTeamIsNew = false
+
+    // A team is editable only if this account created it. Teams pulled because
+    // the user is a *member* (foreign, non-empty ownerID) are read-only — editing
+    // them locally would just be reverted by the next sync (the owner is the
+    // source of truth), so we don't let the user try.
+    private func isOwned(_ team: SavedTeam) -> Bool {
+        let me = auth.userID?.uuidString ?? ""
+        return team.ownerID.isEmpty || team.ownerID.caseInsensitiveCompare(me) == .orderedSame
+    }
 
     var body: some View {
         NavigationView {
@@ -45,8 +55,14 @@ struct TeamsView: View {
                         .frame(maxWidth: .infinity).padding(.vertical, 40).padding(.horizontal, 20)
                     } else {
                         ForEach(teams) { team in
-                            SavedTeamCard(team: team) { editingTeamIsNew = false; editingTeam = team }
-                                onDelete: { context.delete(team) }
+                            let owned = isOwned(team)
+                            SavedTeamCard(team: team, isOwned: owned) {
+                                guard owned else { return }
+                                editingTeamIsNew = false; editingTeam = team
+                            } onDelete: {
+                                guard owned else { return }
+                                context.delete(team)
+                            }
                         }
                     }
                     Spacer(minLength: 80)
@@ -65,9 +81,17 @@ struct TeamsView: View {
 // MARK: - Saved team card (library row)
 struct SavedTeamCard: View {
     @Bindable var team: SavedTeam
+    var isOwned: Bool = true
     let onEdit: () -> Void
     let onDelete: () -> Void
     var body: some View {
+        // When a team is deleted (e.g. the owner removes a shared team while we're
+        // viewing it), SwiftData cascade-deletes its players. SwiftUI may still
+        // re-run this body for the row being torn down; reading a deleted player's
+        // properties traps. Bail out once the model is detached from its context.
+        if team.modelContext == nil {
+            EmptyView()
+        } else {
         CricketCard {
             Button(action: onEdit) {
                 HStack(spacing: 12) {
@@ -79,11 +103,19 @@ struct SavedTeamCard: View {
                             .font(.system(size: 12)).foregroundColor(Theme.text3)
                     }
                     Spacer()
-                    Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(Theme.text3)
+                    if isOwned {
+                        Image(systemName: "chevron.right").font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(Theme.text3)
+                    } else {
+                        // Read-only: this team belongs to another account; the user
+                        // is just a member, so no edit affordance.
+                        BadgeView(text: "Shared")
+                    }
                 }
                 .padding(.horizontal, 18).padding(.vertical, 16)
             }
+            .disabled(!isOwned)
+
             if !team.orderedPlayers.isEmpty {
                 HStack(spacing: 6) {
                     ForEach(team.orderedPlayers.prefix(6)) { p in
@@ -94,14 +126,16 @@ struct SavedTeamCard: View {
                             .font(.system(size: 11, weight: .bold)).foregroundColor(Theme.text3)
                     }
                     Spacer()
-                    Button(role: .destructive, action: onDelete) {
-                        Image(systemName: "trash").font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(Theme.red).frame(width: 28, height: 28)
-                            .background(Theme.red.opacity(0.12)).cornerRadius(8)
+                    if isOwned {
+                        Button(role: .destructive, action: onDelete) {
+                            Image(systemName: "trash").font(.system(size: 12, weight: .semibold))
+                                .foregroundColor(Theme.red).frame(width: 28, height: 28)
+                                .background(Theme.red.opacity(0.12)).cornerRadius(8)
+                        }
                     }
                 }
                 .padding(.horizontal, 14).padding(.bottom, 12)
-            } else {
+            } else if isOwned {
                 HStack {
                     Text("No players yet").font(.system(size: 12)).foregroundColor(Theme.text3)
                     Spacer()
@@ -113,6 +147,7 @@ struct SavedTeamCard: View {
                 }
                 .padding(.horizontal, 18).padding(.bottom, 12)
             }
+        }
         }
     }
 }
@@ -138,7 +173,6 @@ struct TeamEditorView: View {
     @State private var newRole: PlayerRole = .bat
     @State private var didConfirm = false
     @FocusState private var focusedField: Field?
-    @Query private var allTeams: [SavedTeam]
 
     // Directory search (Supabase profiles of everyone who created an account).
     @State private var searchText = ""
@@ -148,9 +182,11 @@ struct TeamEditorView: View {
 
     private enum Field: Hashable { case teamName, search }
 
-    // Search hits, minus anyone already on a team (matched by display name).
+    // Search hits, minus anyone already on THIS team (matched by display name).
+    // We only exclude members of the current team — a player can belong to several
+    // teams, so people added to other teams must still appear here.
     private var filteredResults: [DirectoryPlayer] {
-        let assigned = Set(allTeams.flatMap { $0.players.map(\.name) })
+        let assigned = Set(team.players.map(\.name))
         return searchResults.filter { !$0.displayName.isEmpty && !assigned.contains($0.displayName) }
     }
 
@@ -234,7 +270,7 @@ struct TeamEditorView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading)
                                 VStack(spacing: 6) {
                                     ForEach(filteredResults) { dp in
-                                        Button { addPlayer(named: dp.displayName) } label: {
+                                        Button { addPlayer(named: dp.displayName, phone: dp.phone) } label: {
                                             HStack(spacing: 10) {
                                                 PlayerAvatar(name: dp.displayName, role: newRole)
                                                 VStack(alignment: .leading, spacing: 2) {
@@ -316,10 +352,11 @@ struct TeamEditorView: View {
         }
     }
 
-    private func addPlayer(named name: String) {
+    private func addPlayer(named name: String, phone: String = "") {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return }
-        let player = SavedPlayer(name: trimmed, role: newRole, order: team.players.count)
+        let player = SavedPlayer(name: trimmed, role: newRole, order: team.players.count,
+                                 phone: CompletedMatch.normalizePhone(phone))
         player.team = team
         context.insert(player)
         searchText = ""
@@ -1292,10 +1329,8 @@ struct CaloriesView: View {
     private var todayEntries: [CalorieEntry] { myEntries.filter { calendar.isDateInToday($0.date) } }
     private var todayTotal: Int { todayEntries.reduce(0) { $0 + $1.total } }
 
-    // The pie shows today's split when the user played today, otherwise the
-    // last-30-days split so the chart is still meaningful on rest days.
-    private var pieUsesToday: Bool { !todayEntries.isEmpty }
-    private var pieSource: [CalorieEntry] { pieUsesToday ? todayEntries : myEntries }
+    // The pie always shows today's batting/bowling/fielding split.
+    private var pieSource: [CalorieEntry] { todayEntries }
     private var pieBatting: Double { pieSource.reduce(0) { $0 + $1.battingCalories } }
     private var pieBowling: Double { pieSource.reduce(0) { $0 + $1.bowlingCalories } }
     private var pieFielding: Double { pieSource.reduce(0) { $0 + $1.fieldingCalories } }
@@ -1322,7 +1357,7 @@ struct CaloriesView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: "Calories", subtitle: "Your energy burned · last 30 days")
+            PageHeader(title: "Your energy burned during game activity", subtitle: "Last 30 days")
                 .padding(.horizontal, 18).padding(.top, 12).padding(.bottom, 8)
 
             if myEntries.isEmpty {
@@ -1331,7 +1366,7 @@ struct CaloriesView: View {
                 ScrollView(showsIndicators: false) {
                     VStack(spacing: 16) {
                         todayCard
-                        pieCard
+                        if !todayEntries.isEmpty { pieCard }
                         historyCard
                         disclaimer
                     }
@@ -1371,7 +1406,7 @@ struct CaloriesView: View {
     private var pieCard: some View {
         let total = Int((pieBatting + pieBowling + pieFielding).rounded())
         return CricketCard {
-            CardHeader(title: pieUsesToday ? "Today's Breakdown" : "Breakdown · Last 30 Days")
+            CardHeader(title: "Today's Breakdown")
             VStack(spacing: 16) {
                 ZStack {
                     Chart(segments) { seg in

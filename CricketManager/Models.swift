@@ -22,6 +22,7 @@ struct Player: Identifiable, Codable, Equatable {
     var id: UUID = UUID()
     var name: String
     var role: PlayerRole
+    var phone: String = ""   // links this player to an account (matched on profiles.phone)
     var initials: String {
         name.split(separator: " ").prefix(2).compactMap(\.first).map { String($0).uppercased() }.joined().prefix(2).string
     }
@@ -44,6 +45,11 @@ struct CricketTeam: Identifiable, Codable {
 @Model
 final class SavedTeam {
     var remoteID: UUID = UUID()   // stable id used to sync this row to Supabase
+    // Supabase user id of the account that created this team. Empty for teams
+    // this device created locally (treated as owned). A non-empty value that
+    // isn't the signed-in user marks a team pulled read-only because the user is
+    // a member of it (see SyncEngine.syncMemberTeams).
+    var ownerID: String = ""
     var name: String = ""
     var createdAt: Date = Date.now
     @Relationship(deleteRule: .cascade, inverse: \SavedPlayer.team)
@@ -59,7 +65,7 @@ final class SavedTeam {
 
     /// Value-type snapshot used to start a match.
     func snapshot() -> CricketTeam {
-        CricketTeam(name: name, players: orderedPlayers.map { Player(name: $0.name, role: $0.role) })
+        CricketTeam(name: name, players: orderedPlayers.map { Player(name: $0.name, role: $0.role, phone: $0.phone) })
     }
 }
 
@@ -69,12 +75,15 @@ final class SavedPlayer {
     var name: String = ""
     var role: PlayerRole = PlayerRole.bat
     var order: Int = 0
+    var phone: String = ""   // digits-only; empty for manually-typed players
+    var ownerID: String = "" // owning account (mirrors the team's ownerID); empty = local/owned
     var team: SavedTeam?
 
-    init(name: String, role: PlayerRole, order: Int = 0) {
+    init(name: String, role: PlayerRole, order: Int = 0, phone: String = "") {
         self.name = name
         self.role = role
         self.order = order
+        self.phone = phone
     }
 }
 
@@ -156,12 +165,30 @@ final class CompletedMatch {
     var totalOvers: Int = 0
     var manOfTheMatch: String = ""
     var isTie: Bool = false
+    // Names of every player who took part (both teams). Synced to the
+    // `player_names` (text[]) column on the `completed_matches` table.
+    var playerNames: [String] = []
+    // Digits-only phone of every player who took part. A device shows a match on
+    // its Home feed when the signed-in profile's phone is in here — so every
+    // participant sees matches they played in, even ones another account recorded.
+    // Synced to the `player_phones` (text[]) column.
+    var playerPhones: [String] = []
+    // Supabase user id of the account that recorded this match. Used so the sync
+    // engine only pushes/owns matches this user recorded, while matches merely
+    // *participated* in are pulled read-only (see SyncEngine).
+    var ownerID: String = ""
+    // Full scorecard (both innings) as JSON, so tapping a finished match shows the
+    // complete batting/bowling detail. Empty for matches recorded before this
+    // existed — the detail view falls back to the summary for those.
+    var scorecardJSON: String = ""
 
     init(date: Date = .now,
          firstBattingTeam: String, firstRuns: Int, firstWickets: Int, firstOvers: String,
          secondBattingTeam: String, secondRuns: Int, secondWickets: Int, secondOvers: String,
          winnerName: String, resultText: String, totalOvers: Int,
-         manOfTheMatch: String, isTie: Bool) {
+         manOfTheMatch: String, isTie: Bool,
+         playerNames: [String] = [], playerPhones: [String] = [], ownerID: String = "",
+         scorecardJSON: String = "") {
         self.date = date
         self.firstBattingTeam = firstBattingTeam
         self.firstRuns = firstRuns
@@ -176,7 +203,14 @@ final class CompletedMatch {
         self.totalOvers = totalOvers
         self.manOfTheMatch = manOfTheMatch
         self.isTie = isTie
+        self.playerNames = playerNames
+        self.playerPhones = playerPhones
+        self.ownerID = ownerID
+        self.scorecardJSON = scorecardJSON
     }
+
+    /// Reduce a phone to digits only, so numbers match regardless of formatting.
+    static func normalizePhone(_ phone: String) -> String { phone.filter(\.isNumber) }
 }
 
 // MARK: - Registered player (SwiftData)
@@ -396,6 +430,9 @@ class Innings: ObservableObject, Identifiable {
 
 // MARK: - Match
 class Match: ObservableObject {
+    // Stable id for this match instance, used to key its row in the Supabase
+    // `live_matches` table so every scoring update overwrites the same row.
+    let liveID: UUID = UUID()
     var teamA: CricketTeam
     var teamB: CricketTeam
     var totalOvers: Int
